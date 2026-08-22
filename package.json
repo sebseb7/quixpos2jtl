@@ -1,0 +1,65 @@
+{
+  "name": "quixpos2jtl",
+  "version": "1.0.0",
+  "description": "Electron tray app + REST API service for MSSQL database",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:installer": "electron-builder --win nsis",
+    "dist": "electron-builder --win nsis",
+    "service:install": "node src/service/install.js",
+    "service:uninstall": "node src/service/install.js --uninstall"
+  },
+  "author": "QuixPOS",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "electron-store": "^11.0.2",
+    "express": "^5.2.1",
+    "mssql": "^12.7.0",
+    "node-windows": "^1.0.0-beta.8",
+    "selfsigned": "^5.5.0"
+  },
+  "devDependencies": {
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.quixpos.quixpos2jtl",
+    "productName": "QuixPOS2JTL",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "src/**/*",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "QuixPOS2JTL",
+      "uninstallDisplayName": "QuixPOS2JTL"
+    }
+  },
+  "allowScripts": {
+    "electron@36.9.5": true
+  }
+}

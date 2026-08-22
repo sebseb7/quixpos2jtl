@@ -1,0 +1,8 @@
+node_modules/
+out/
+dist/
+*.log
+src/service/daemon/*.log
+src/service/daemon/*.out.log
+src/service/daemon/*.err.log
+src/service/daemon/*.wrapper.log
