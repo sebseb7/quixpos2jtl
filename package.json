@@ -9,8 +9,8 @@
     "service:dev": "node src/service/server.js -v",
     "service:dev:req": "node src/service/server.js --log-req",
     "service:dev:res": "node src/service/server.js --log-res",
-    "build:installer": "electron-builder --win nsis",
-    "dist": "electron-builder --win nsis",
+    "build:installer": "electron-builder --win nsis --publish never",
+    "dist": "electron-builder --win nsis --publish never",
     "service:install": "node src/service/install.js",
     "service:uninstall": "node src/service/install.js --uninstall"
   },
