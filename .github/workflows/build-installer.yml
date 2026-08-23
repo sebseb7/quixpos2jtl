@@ -52,14 +52,13 @@ jobs:
           SHA256=$(sha256sum "$EXE_FILE" | cut -d ' ' -f 1)
           echo "SHA256 checksum: $SHA256"
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "installer_path=$EXE_FILE" >> "$GITHUB_OUTPUT"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v7
         with:
-          name: quixpos2jtl-installer
-          path: |
-            dist/*.exe
-            dist/*.blockmap
+          path: ${{ steps.checksum.outputs.installer_path }}
+          archive: false
           if-no-files-found: error
 
   badge:
