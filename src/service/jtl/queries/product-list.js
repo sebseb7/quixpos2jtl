@@ -31,6 +31,21 @@ SELECT TOP (@limit)
     FROM dbo.tkategorieartikel ka
     WHERE ka.kArtikel = a.kArtikel
   ) AS categoryIds,
+  (
+    SELECT COUNT(*)
+    FROM dbo.tKategorieArtikel ka2
+    INNER JOIN dbo.tArtikel a2 ON a2.kArtikel = ka2.kArtikel AND a2.cAktiv = 'Y'
+    INNER JOIN dbo.tArtikelBeschreibung ab2 ON ab2.kArtikel = a2.kArtikel AND ab2.kSprache = @languageId
+    WHERE ka2.kKategorie = (
+      SELECT TOP 1 ka1.kKategorie
+      FROM dbo.tKategorieArtikel ka1
+      WHERE ka1.kArtikel = a.kArtikel
+    )
+    AND (
+      ab2.cName < ab.cName
+      OR (ab2.cName = ab.cName AND a2.kArtikel < a.kArtikel)
+    )
+  ) AS sort,
   a.nIstVater AS isParent,
   a.kVaterArtikel AS parentArticleId,
   CASE WHEN a.kStueckliste <> 0 THEN '1' ELSE '0' END AS isCompositeProduct,
@@ -192,6 +207,7 @@ async function getProductList({ cursor = 0, limit = 20 } = {}) {
       price: basePrice,
       created_at: formatDateTime(product.createdAt),
       lastChanged: String(product.lastChanged),
+      sort: String(product.sort ?? 0),
       categories_id: categoryIds[0] ?? '0',
       categories: categoryIds.map((categoryId) => ({ categoryId })),
       prices,

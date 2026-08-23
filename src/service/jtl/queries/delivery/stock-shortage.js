@@ -35,14 +35,22 @@ async function getPositionArtikel(transaction, kAuftragPosition) {
   return row?.kArtikel ?? 0;
 }
 
-async function bookWareneingang(transaction, kBenutzer, kWarenLagerPlatz, kArtikel, fehlmenge) {
+async function bookWareneingang(
+  transaction,
+  kBenutzer,
+  kWarenLagerPlatz,
+  kArtikel,
+  fehlmenge,
+  comment = POS_SHORTAGE_COMMENT,
+  buchungsart = BUCHUNGSART_WARENEINGANG,
+) {
   await new sql.Request(transaction)
     .input('kArtikel', sql.Int, kArtikel)
     .input('kWarenLagerPlatz', sql.Int, kWarenLagerPlatz)
     .input('kBenutzer', sql.Int, kBenutzer)
     .input('fAnzahl', sql.Float, fehlmenge)
-    .input('cKommentar', sql.NVarChar, POS_SHORTAGE_COMMENT)
-    .input('kBuchungsart', sql.Int, BUCHUNGSART_WARENEINGANG)
+    .input('cKommentar', sql.NVarChar, comment)
+    .input('kBuchungsart', sql.Int, buchungsart)
     .query(`
       DECLARE @kWarenlagerEingang INT;
       EXEC dbo.spWarenlagerEingangSchreiben
@@ -67,6 +75,37 @@ async function bookWareneingang(transaction, kBenutzer, kWarenLagerPlatz, kArtik
         @kWarenlagerEingang = @kWarenlagerEingang OUTPUT;
       SELECT @kWarenlagerEingang AS kWarenlagerEingang;
     `);
+}
+
+async function bookReturnPositions(
+  transaction,
+  kBenutzer,
+  kWarenLagerPlatz,
+  returnPositions,
+) {
+  logger.info(`returnBooking: processing ${returnPositions.length} return position(s) at kWarenLagerPlatz=${kWarenLagerPlatz}`);
+  for (const { kAuftragPosition, quantity } of returnPositions) {
+    if (!kAuftragPosition || quantity >= 0) {
+      continue;
+    }
+    const returnQty = Math.abs(quantity);
+    const kArtikel = await getPositionArtikel(transaction, kAuftragPosition);
+    logger.info(`returnBooking: kBestellPos=${kAuftragPosition} kArtikel=${kArtikel} returnQty=${returnQty}`);
+    if (!kArtikel) {
+      logger.info(`returnBooking: kBestellPos=${kAuftragPosition} no kArtikel (free position / Pfand?), skip return booking`);
+      continue;
+    }
+    await bookWareneingang(
+      transaction,
+      kBenutzer,
+      kWarenLagerPlatz,
+      kArtikel,
+      returnQty,
+      'Korrekturbuchung erstellt durch POS-Abgleich (Retoure)',
+      BUCHUNGSART_WARENEINGANG,
+    );
+    logger.info(`returnBooking: successfully booked return of ${returnQty}x kArtikel=${kArtikel} into kWarenLagerPlatz=${kWarenLagerPlatz}`);
+  }
 }
 
 async function bookStockShortfallsAndRereserve(
@@ -131,4 +170,7 @@ async function bookStockShortfallsAndRereserve(
 
 module.exports = {
   bookStockShortfallsAndRereserve,
+  bookReturnPositions,
+  bookWareneingang,
+  getPositionArtikel,
 };
