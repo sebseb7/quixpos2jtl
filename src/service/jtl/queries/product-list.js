@@ -10,12 +10,6 @@ WITH TaxRates AS (
   SELECT kSteuerklasse, fSteuersatz
   FROM dbo.tSteuersatz
   WHERE kSteuerzone IN (SELECT kSteuerzone FROM dbo.tSteuerzone WHERE cName = @taxZoneName)
-),
-ImageRV AS (
-  SELECT kArtikel, MAX(CONVERT(BIGINT, bRowversion)) AS maxImageRV
-  FROM dbo.tArtikelbildPlattform
-  WHERE kShop = @kShop
-  GROUP BY kArtikel
 )
 SELECT TOP (@limit)
   a.kArtikel AS id,
@@ -24,11 +18,7 @@ SELECT TOP (@limit)
   a.fVKNetto AS netPrice,
   tr.fSteuersatz AS taxRate,
   a.dErstelldatum AS createdAt,
-  CASE
-    WHEN ir.maxImageRV IS NOT NULL AND ir.maxImageRV > CONVERT(BIGINT, a.bRowversion)
-    THEN ir.maxImageRV
-    ELSE CONVERT(BIGINT, a.bRowversion)
-  END AS lastChanged,
+  rv.lastChanged,
   (
     SELECT TOP 1 img.cHash
     FROM dbo.tArtikelbildPlattform abp
@@ -54,20 +44,28 @@ SELECT TOP (@limit)
   ISNULL(v.fBestand, 0) AS fBestand
 FROM dbo.tArtikel a
 INNER JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = @languageId
+LEFT JOIN dbo.tlagerbestand lb ON lb.kArtikel = a.kArtikel
 LEFT JOIN TaxRates tr ON tr.kSteuerklasse = a.kSteuerklasse
-LEFT JOIN ImageRV ir ON ir.kArtikel = a.kArtikel
 LEFT JOIN dbo.vLagerbestandProLager v ON v.kArtikel = a.kArtikel AND v.kWarenlager = @warenlagerId
+CROSS APPLY (
+  SELECT MAX(val) AS lastChanged
+  FROM (VALUES
+    (CONVERT(BIGINT, a.bRowversion)),
+    (CONVERT(BIGINT, lb.bRowversion)),
+    (CONVERT(BIGINT, ab.bRowversion)),
+    ((SELECT MAX(CONVERT(BIGINT, abp.bRowversion)) FROM dbo.tArtikelbildPlattform abp WHERE abp.kArtikel = a.kArtikel AND (@kShop = 0 OR abp.kShop = @kShop))),
+    ((SELECT MAX(CONVERT(BIGINT, p.bRowversion)) FROM dbo.tPreis p WHERE p.kArtikel = a.kArtikel AND (@kShop = 0 OR p.kShop = @kShop))),
+    ((SELECT MAX(CONVERT(BIGINT, sp.bRowversion)) FROM dbo.tArtikelSonderpreis sp WHERE sp.kArtikel = a.kArtikel))
+  ) AS t(val)
+) rv
 WHERE a.cAktiv = 'Y'
   AND (@kShop = 0 OR EXISTS (
     SELECT 1 FROM dbo.tKategorieArtikel ka
     INNER JOIN dbo.tKategorieShop ks ON ks.kKategorie = ka.kKategorie AND ks.kShop = @kShop
     WHERE ka.kArtikel = a.kArtikel
   ))
-  AND (
-    CONVERT(BIGINT, a.bRowversion) > @cursor
-    OR (ir.maxImageRV IS NOT NULL AND ir.maxImageRV > @cursor)
-  )
-ORDER BY lastChanged ASC;
+  AND rv.lastChanged > @cursor
+ORDER BY rv.lastChanged ASC;
 `;
 
 function priceOverridesSql(articleIds) {

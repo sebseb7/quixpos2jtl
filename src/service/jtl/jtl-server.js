@@ -42,6 +42,16 @@ function createJtlPosServer(pairingStore, config = {}) {
 
   return async function requestListener(req, res) {
     req.rawBody = await readBody(req);
+    if (logger.isLogBodyEnabled() && req.method !== 'GET' && req.method !== 'OPTIONS' && req.rawBody?.length) {
+      const text = req.rawBody.toString('utf8');
+      let bodyFormatted = text;
+      try {
+        bodyFormatted = JSON.stringify(JSON.parse(text), null, 2);
+      } catch {
+        // keep text
+      }
+      logger.info(`[REQ BODY] ${req.method} ${req.url}:\n${bodyFormatted}`);
+    }
     try {
       await handle(req, res);
     } catch (err) {

@@ -19,6 +19,53 @@ const MAX_RING_BUFFER = 500;
 const ringBuffer = [];
 let logIdSequence = 0;
 
+let logBodyEnabled =
+  process.argv.includes('--log-body') ||
+  process.argv.includes('--log-req') ||
+  process.argv.includes('--log-request') ||
+  process.argv.includes('--log-all') ||
+  process.argv.includes('--verbose') ||
+  process.argv.includes('-v') ||
+  process.env.LOG_BODY === 'true' ||
+  process.env.LOG_BODY === '1' ||
+  process.env.LOG_REQ === 'true' ||
+  process.env.LOG_REQ === '1' ||
+  process.env.LOG_ALL === 'true' ||
+  process.env.LOG_ALL === '1' ||
+  process.env.VERBOSE === 'true' ||
+  process.env.VERBOSE === '1';
+
+let logResponseEnabled =
+  process.argv.includes('--log-response') ||
+  process.argv.includes('--log-res') ||
+  process.argv.includes('--log-all') ||
+  process.argv.includes('--verbose') ||
+  process.argv.includes('-v') ||
+  process.env.LOG_RESPONSE === 'true' ||
+  process.env.LOG_RESPONSE === '1' ||
+  process.env.LOG_RES === 'true' ||
+  process.env.LOG_RES === '1' ||
+  process.env.LOG_ALL === 'true' ||
+  process.env.LOG_ALL === '1' ||
+  process.env.VERBOSE === 'true' ||
+  process.env.VERBOSE === '1';
+
+function setLogBody(enabled) {
+  logBodyEnabled = Boolean(enabled);
+}
+
+function isLogBodyEnabled() {
+  return logBodyEnabled;
+}
+
+function setLogResponse(enabled) {
+  logResponseEnabled = Boolean(enabled);
+}
+
+function isLogResponseEnabled() {
+  return logResponseEnabled;
+}
+
 try {
   fs.mkdirSync(LOGS_DIR, { recursive: true });
 } catch {
@@ -123,6 +170,18 @@ const logger = {
     }
     const level = statusCode >= 500 ? 'ERROR' : (statusCode >= 400 ? 'WARN' : 'INFO');
     pushLog(level, `${remoteAddress || '127.0.0.1'} ${method} ${url} ${statusCode} (${durationMs}ms)`);
+
+    if (logResponseEnabled && response && response !== '(empty)') {
+      let formatted = response;
+      if (typeof response === 'string') {
+        try {
+          formatted = JSON.stringify(JSON.parse(response), null, 2);
+        } catch {
+          // keep as text
+        }
+      }
+      pushLog('INFO', `[RES BODY] ${statusCode} ${method} ${url}:\n${formatted}`);
+    }
   },
 
   logOrder(order) {
@@ -136,7 +195,15 @@ const logger = {
       // ignore
     }
     pushLog('OK', `Order logged: externalId=${externalId}`);
+    if (logBodyEnabled) {
+      pushLog('INFO', `[ORDER BODY] externalId=${externalId}:\n${JSON.stringify(order, null, 2)}`);
+    }
   },
+
+  isLogBodyEnabled,
+  setLogBody,
+  isLogResponseEnabled,
+  setLogResponse,
 
   getRecentLogs(sinceId = 0, limit = 200, levelFilter = null) {
     let logs = ringBuffer.filter((l) => l.id > sinceId);

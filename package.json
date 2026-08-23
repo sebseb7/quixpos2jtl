@@ -5,6 +5,10 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
+    "service:start": "node src/service/server.js",
+    "service:dev": "node src/service/server.js -v",
+    "service:dev:req": "node src/service/server.js --log-req",
+    "service:dev:res": "node src/service/server.js --log-res",
     "build:installer": "electron-builder --win nsis",
     "dist": "electron-builder --win nsis",
     "service:install": "node src/service/install.js",

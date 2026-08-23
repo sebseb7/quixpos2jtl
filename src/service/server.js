@@ -58,6 +58,18 @@ function formatBody(buffer) {
 
 async function start() {
   const config = loadConfig();
+  if (config.logging?.logBody || config.logBody || config.logging?.verbose || config.verbose) {
+    logger.setLogBody(true);
+  }
+  if (config.logging?.logResponse || config.logResponse || config.logging?.verbose || config.verbose) {
+    logger.setLogResponse(true);
+  }
+  if (logger.isLogBodyEnabled()) {
+    logger.info('Verbose request / POST body logging is ENABLED (--log-body / --log-req / LOG_BODY=1)');
+  }
+  if (logger.isLogResponseEnabled()) {
+    logger.info('Verbose response text logging is ENABLED (--log-response / --log-res / LOG_RESPONSE=1)');
+  }
   const app = express();
 
   // Load / Generate TLS certificate

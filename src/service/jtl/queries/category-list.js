@@ -11,17 +11,27 @@ SELECT TOP (@limit)
   k.nSort AS sort,
   ks.cName AS name,
   b.cHash AS imgHash,
-  CONVERT(BIGINT, k.bRowversion) AS lastChanged
+  rv.lastChanged
 FROM dbo.tKategorie k
 INNER JOIN dbo.tKategorieSprache ks ON ks.kKategorie = k.kKategorie AND ks.kSprache = @languageId
 LEFT JOIN dbo.tKategoriebildPlattform kbp
   ON kbp.kKategorie = k.kKategorie
 LEFT JOIN dbo.tBild b ON b.kBild = kbp.kBild
+CROSS APPLY (
+  SELECT MAX(v) AS lastChanged
+  FROM (VALUES
+    (CONVERT(BIGINT, k.bRowversion)),
+    (CONVERT(BIGINT, ks.bRowversion)),
+    (CONVERT(BIGINT, kbp.bRowversion)),
+    ((SELECT MAX(CONVERT(BIGINT, ka.bRowversion)) FROM dbo.tKategorieArtikel ka WHERE ka.kKategorie = k.kKategorie)),
+    ((SELECT MAX(CONVERT(BIGINT, ksh.bRowversion)) FROM dbo.tKategorieShop ksh WHERE ksh.kKategorie = k.kKategorie AND (@kShop = 0 OR ksh.kShop = @kShop)))
+  ) AS t(v)
+) rv
 WHERE k.kKategorie IN (SELECT kKategorie FROM CategoryTree WHERE kKategorie <> @rootCategoryId)
   AND k.cAktiv = 'Y'
   AND (@kShop = 0 OR EXISTS (SELECT 1 FROM dbo.tKategorieShop ks2 WHERE ks2.kKategorie = k.kKategorie AND ks2.kShop = @kShop))
-  AND CONVERT(BIGINT, k.bRowversion) > @cursor
-ORDER BY lastChanged ASC;
+  AND rv.lastChanged > @cursor
+ORDER BY rv.lastChanged ASC;
 `;
 
 async function getCategoryList({ cursor = 0, limit = 20, rootCategoryId = getRootCategoryId() } = {}) {
