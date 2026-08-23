@@ -1,5 +1,8 @@
 # QuixPOS2JTL
 
+[![Build and Upload Installer](https://github.com/sebseb7/quixpos2jtl/actions/workflows/build-installer.yml/badge.svg)](https://github.com/sebseb7/quixpos2jtl/actions/workflows/build-installer.yml)
+[![Installer SHA-256](https://byob.yarr.is/sebseb7/quixpos2jtl/installer_sha256)](https://github.com/sebseb7/quixpos2jtl/actions)
+
 Electron system-tray application and Windows Service that hosts the complete **POS REST API Server** connected to a JTL-Wawi compatible Microsoft SQL Server database. The service can run **embedded** inside the Electron tray process or be **installed as an independent Windows system service** and controlled directly from the tray.
 
 ---
