@@ -1,0 +1,71 @@
+name: Build and Upload Installer
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows Installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Electron and Builder dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: ${{ runner.os }}-electron-cache-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-cache-
+
+      - name: Build installer
+        run: npm run build:installer
+
+      - name: Calculate installer SHA256
+        id: checksum
+        shell: bash
+        run: |
+          EXE_FILE=$(ls dist/*.exe | head -n 1)
+          SHA256=$(sha256sum "$EXE_FILE" | cut -d ' ' -f 1)
+          echo "SHA256 checksum: $SHA256"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Update SHA256 badge
+        uses: RubbaBoy/BYOB@v1.3.0
+        if: github.event_name != 'pull_request'
+        with:
+          NAME: installer_sha256
+          LABEL: 'installer sha256'
+          STATUS: ${{ steps.checksum.outputs.sha256 }}
+          COLOR: blue
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: quixpos2jtl-installer
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+          if-no-files-found: error
