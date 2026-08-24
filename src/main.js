@@ -10,6 +10,7 @@ const sql = require('mssql');
 const config = require('./config');
 const svcManager = require('./service-manager');
 const cert = require('./service/cert');
+const { logger } = require('./service/logger');
 const { createPairingStore } = require('./service/jtl/pairing');
 const { updateFirewallRules } = require('./service/firewall');
 
@@ -328,11 +329,14 @@ function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('generate-cert', () => {
+  ipcMain.handle('generate-cert', async () => {
     try {
-      const result = cert.generateCert();
+      logger.info('Generating self-signed TLS certificate…');
+      const result = await cert.generateCert();
+      logger.success('TLS certificate generated successfully');
       return { success: true, publicKey: result.cert };
     } catch (err) {
+      logger.error(`Failed to generate TLS certificate: ${err.message}`);
       return { success: false, error: err.message };
     }
   });

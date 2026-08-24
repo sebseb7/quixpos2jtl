@@ -5,6 +5,12 @@ const { logger } = require('../logger');
 
 function buildConfig(config = {}) {
   const cfg = loadConfig();
+  const envVal = String(process.env.NEWPIN_ENABLED ?? '').trim().toLowerCase();
+  const isNewPinExplicitlyDisabled = envVal === 'false' || envVal === '0';
+  const newPinEnabled = config.newPinEnabled !== undefined
+    ? Boolean(config.newPinEnabled)
+    : !isNewPinExplicitlyDisabled;
+
   return {
     authToken: config.authToken || cfg.auth?.authToken || process.env.AUTH_TOKEN || '',
     certificateFingerprint: config.certificateFingerprint || '',
@@ -13,7 +19,7 @@ function buildConfig(config = {}) {
     mandantId: config.mandantId || cfg.shop?.mandantId || process.env.MANDANT_ID || '1',
     mandantName: config.mandantName || cfg.shop?.mandantName || process.env.MANDANT_NAME || 'eB-Standard',
     mandantDatabase: config.mandantDatabase || cfg.shop?.mandantDatabase || cfg.db?.database || process.env.MANDANT_DATABASE || 'eazybusiness',
-    newPinEnabled: config.newPinEnabled ?? process.env.NEWPIN_ENABLED === 'true',
+    newPinEnabled,
   };
 }
 

@@ -9,9 +9,9 @@ function generatePin() {
 }
 
 function handle(_req, res, { pairingStore, config }) {
-  if (!config.newPinEnabled) {
+  if (config.newPinEnabled === false) {
     return sendJson(res, 403, {
-      Message: 'This endpoint is disabled. Set NEWPIN_ENABLED=true to enable it.',
+      Message: 'This endpoint is disabled.',
     });
   }
 

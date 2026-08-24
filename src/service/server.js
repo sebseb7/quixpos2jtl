@@ -76,7 +76,7 @@ async function start() {
   let tlsCreds = cert.loadCert();
   if (!tlsCreds) {
     logger.info('No TLS certificate found — generating self-signed cert…');
-    tlsCreds = cert.generateCert();
+    tlsCreds = await cert.generateCert();
   }
   const certMeta = readCertMetadata(tlsCreds.cert);
 
@@ -189,6 +189,38 @@ async function start() {
     res.json({ status: 'ok', message: 'Logs cleared' });
   });
 
+  // --- Pairing management endpoints ---
+  app.get('/api/pairing', (_req, res) => {
+    res.json({ success: true, ...pairingStore.getPairingState() });
+  });
+
+  app.post('/api/pairing/generate', (req, res) => {
+    const name = req.body?.name || req.query?.name || 'JTL-POS';
+    const entry = pairingStore.generatePairingCode(name);
+    res.json({ success: true, ...entry });
+  });
+
+  app.post('/api/pairing/pin', (req, res) => {
+    const code = req.body?.code || req.body?.pin || req.query?.code || req.query?.pin;
+    const name = req.body?.name || req.query?.name || 'JTL-POS';
+    if (!code) {
+      const entry = pairingStore.generatePairingCode(name);
+      return res.json({ success: true, ...entry });
+    }
+    pairingStore.setPairingCode(code, name);
+    res.json({ success: true, code: String(code).trim(), name });
+  });
+
+  app.delete('/api/pairing/pin', (_req, res) => {
+    pairingStore.revokePairingCode();
+    res.json({ success: true, message: 'Pairing PIN revoked' });
+  });
+
+  app.delete('/api/pairing/devices/:token', (req, res) => {
+    pairingStore.removePairedDevice(req.params.token);
+    res.json({ success: true, message: 'Paired device removed' });
+  });
+
   // --- JTL-POS Handler Middleware (handles /v1/*, /api/v1/*, OPTIONS, etc.) ---
   app.use(async (req, res, next) => {
     const path = req.path;
@@ -280,6 +312,35 @@ async function start() {
 
   // --- Watch Config File For Live Reloading ---
   setupConfigFileWatcher();
+
+  // --- CLI pairing PIN flag ---
+  const pinArgIndex = process.argv.findIndex((arg) => arg === '--pin' || arg === '--newpin' || arg === '--generate-pin');
+  const pinEqualArg = process.argv.find((arg) => arg.startsWith('--pin=') || arg.startsWith('--newpin='));
+
+  if (pinEqualArg) {
+    const explicitPin = pinEqualArg.split('=')[1]?.trim();
+    if (explicitPin) {
+      pairingStore.setPairingCode(explicitPin, 'JTL-POS');
+      logger.success(`Set active pairing PIN: ${explicitPin} (ready for JTL-POS pairing)`);
+    } else {
+      const pinEntry = pairingStore.generatePairingCode('JTL-POS');
+      logger.success(`Generated pairing PIN: ${pinEntry.code} (ready for JTL-POS pairing)`);
+    }
+  } else if (pinArgIndex !== -1) {
+    const nextArg = process.argv[pinArgIndex + 1];
+    if (nextArg && !nextArg.startsWith('-')) {
+      pairingStore.setPairingCode(nextArg, 'JTL-POS');
+      logger.success(`Set active pairing PIN: ${nextArg} (ready for JTL-POS pairing)`);
+    } else {
+      const pinEntry = pairingStore.generatePairingCode('JTL-POS');
+      logger.success(`Generated pairing PIN: ${pinEntry.code} (ready for JTL-POS pairing)`);
+    }
+  } else {
+    const activePin = pairingStore.getPairingState().pairingCodes[0]?.code;
+    if (activePin) {
+      logger.info(`Active pairing PIN: ${activePin} (ready for JTL-POS pairing)`);
+    }
+  }
 
   // Notify parent (Electron) if forked
   if (process.send) {

@@ -408,11 +408,35 @@ async function insertOrderAddress(transaction, kAuftrag, kKunde, address, nTyp) 
     `);
 }
 
+let hasGesamtColumnsCache = null;
+
+async function checkHasGesamtColumns(transaction) {
+  if (hasGesamtColumnsCache !== null) {
+    return hasGesamtColumnsCache;
+  }
+  try {
+    const result = await new sql.Request(transaction).query(`
+      SELECT 1 AS hasCols
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_NAME = 'tAuftragPosition'
+        AND COLUMN_NAME = 'fVkNettoGesamt'
+    `);
+    hasGesamtColumnsCache = result.recordset.length > 0;
+  } catch {
+    hasGesamtColumnsCache = false;
+  }
+  return hasGesamtColumnsCache;
+}
+
 async function insertOrderItem(transaction, kAuftrag, item) {
-  const vat = toNumber(item.vat, 19);
-  const quantity = toNumber(item.quantity, 1);
-  const priceNet = toNumber(item.priceNet, toNumber(item.priceGross) / (1 + vat / 100));
-  const discount = toNumber(item.discountPercent, 0);
+  const vat = toNumber(item.vat ?? item.taxRate ?? item.vatRate, 19);
+  const quantity = toNumber(item.quantity ?? item.count ?? item.amount, 1);
+  const rawPriceNet = item.priceNet ?? item.netPrice ?? item.unitNetPrice;
+  const rawPriceGross = item.priceGross ?? item.grossPrice ?? item.price ?? item.unitPrice;
+  const priceNet = rawPriceNet != null 
+    ? toNumber(rawPriceNet, 0) 
+    : (rawPriceGross != null ? toNumber(rawPriceGross, 0) / (1 + vat / 100) : 0);
+  const discount = toNumber(item.discountPercent ?? item.discount ?? item.discountRate, 0);
   const kSteuerklasse = steuerklasseForVat(vat);
   const sku = String(item.sku || '').trim();
   const positionType = isVersandposition(item) ? VERSANDPOSITION_TYPE : toNumber(item.type, 0);
@@ -432,30 +456,50 @@ async function insertOrderItem(transaction, kAuftrag, item) {
   const nType = positionType === VERSANDPOSITION_TYPE ? VERSANDPOSITION_TYPE : (kArtikel ? 1 : 0);
   const nReserviert = nType === VERSANDPOSITION_TYPE ? 0 : 1;
 
-  const result = await new sql.Request(transaction)
+  const priceGross = rawPriceGross != null ? toNumber(rawPriceGross, priceNet * (1 + vat / 100)) : priceNet * (1 + vat / 100);
+  const vkNettoGesamt = priceNet * quantity * (1 - discount / 100);
+  const vkBruttoGesamt = priceGross * quantity * (1 - discount / 100);
+
+  const hasGesamtColumns = await checkHasGesamtColumns(transaction);
+
+  let req = new sql.Request(transaction)
     .input('kArtikel', sql.Int, kArtikel)
     .input('kAuftrag', sql.Int, kAuftrag)
     .input('cArtNr', sql.NVarChar, kArtikel ? sku : null)
     .input('cName', sql.NVarChar, item.name || sku || 'Position')
     .input('cHinweis', sql.NVarChar, item.note || '')
     .input('fAnzahl', sql.Float, quantity)
+    .input('fEkNetto', sql.Float, 0.0)
     .input('fVkNetto', sql.Float, priceNet)
     .input('fMwSt', sql.Float, vat)
     .input('kSteuerklasse', sql.Int, kSteuerklasse)
     .input('nType', sql.Int, nType)
     .input('nReserviert', sql.Int, nReserviert)
     .input('cEinheit', sql.NVarChar, item.unit || '')
-    .input('fRabatt', sql.Float, discount)
-    .query(`
-      DECLARE @t TABLE ([kAuftragPosition] INT);
-      INSERT INTO Verkauf.tAuftragPosition
-        (kArtikel, kAuftrag, cArtNr, nReserviert, cName, cHinweis, fAnzahl, fVkNetto, fMwSt,
-         cNameStandard, kSteuerklasse, nType, cEinheit, fFaktor, kSteuerschluessel, fRabatt)
-      OUTPUT inserted.kAuftragPosition INTO @t
-      VALUES (@kArtikel, @kAuftrag, @cArtNr, @nReserviert, @cName, @cHinweis, @fAnzahl, @fVkNetto, @fMwSt,
-         @cName, @kSteuerklasse, @nType, @cEinheit, 1.0, 3, @fRabatt);
-      SELECT kAuftragPosition FROM @t;
-    `);
+    .input('fRabatt', sql.Float, discount);
+
+  let insertCols = `kArtikel, kAuftrag, cArtNr, nReserviert, cName, cHinweis, fAnzahl, fEkNetto, fVkNetto, fMwSt,
+         cNameStandard, kSteuerklasse, nType, cEinheit, fFaktor, kSteuerschluessel, fRabatt`;
+  let insertVals = `@kArtikel, @kAuftrag, @cArtNr, @nReserviert, @cName, @cHinweis, @fAnzahl, @fEkNetto, @fVkNetto, @fMwSt,
+         @cName, @kSteuerklasse, @nType, @cEinheit, 1.0, 3, @fRabatt`;
+
+  if (hasGesamtColumns) {
+    req = req
+      .input('fVkNettoGesamt', sql.Float, vkNettoGesamt)
+      .input('fVkBruttoGesamt', sql.Float, vkBruttoGesamt);
+    insertCols = `kArtikel, kAuftrag, cArtNr, nReserviert, cName, cHinweis, fAnzahl, fEkNetto, fVkNetto, fVkNettoGesamt, fVkBruttoGesamt, fMwSt,
+         cNameStandard, kSteuerklasse, nType, cEinheit, fFaktor, kSteuerschluessel, fRabatt`;
+    insertVals = `@kArtikel, @kAuftrag, @cArtNr, @nReserviert, @cName, @cHinweis, @fAnzahl, @fEkNetto, @fVkNetto, @fVkNettoGesamt, @fVkBruttoGesamt, @fMwSt,
+         @cName, @kSteuerklasse, @nType, @cEinheit, 1.0, 3, @fRabatt`;
+  }
+
+  const result = await req.query(`
+    DECLARE @t TABLE ([kAuftragPosition] INT);
+    INSERT INTO Verkauf.tAuftragPosition (${insertCols})
+    OUTPUT inserted.kAuftragPosition INTO @t
+    VALUES (${insertVals});
+    SELECT kAuftragPosition FROM @t;
+  `);
   return result.recordset[0]?.kAuftragPosition ?? null;
 }
 

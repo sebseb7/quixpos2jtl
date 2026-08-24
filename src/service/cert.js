@@ -16,10 +16,10 @@ const KEY_FILE = path.join(CERTS_DIR, 'server.key');
  * Overwrites any existing cert.
  * @returns {{ cert: string, key: string }} PEM strings
  */
-function generateCert() {
+async function generateCert() {
   ensureDirs();
   const attrs = [{ name: 'commonName', value: 'localhost' }];
-  const pems = selfsigned.generate(attrs, {
+  const pems = await selfsigned.generate(attrs, {
     days: 3650,
     keySize: 2048,
     extensions: [

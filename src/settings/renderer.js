@@ -268,8 +268,14 @@ function bindActions() {
     btn.classList.add('loading');
     const res = await window.api.generateCert();
     btn.classList.remove('loading');
-    if (res.success) {
+    if (res && res.success) {
       await refreshCertStatus();
+    } else {
+      const statusEl = document.getElementById('certStatus');
+      if (statusEl) {
+        statusEl.className = 'cert-status missing';
+        statusEl.innerHTML = `<span class="cert-icon">❌</span><span>Generation failed: ${escapeHtml(res?.error || 'Unknown error')}</span>`;
+      }
     }
   });
 

@@ -30,7 +30,7 @@ npm run build:installer
 ```
 The standalone installer executable is generated at:
 ```
-dist/QuixPOS2JTL Setup 1.0.0.exe
+dist/QuixPOS2JTL Setup 1.1.0.exe
 ```
 When installed on a POS server, it creates Start Menu shortcuts and packages the complete standalone background service with automatic Windows Firewall configuration.
 
