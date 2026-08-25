@@ -57,10 +57,7 @@ const DEFAULTS = {
   shop: {
     mandantId: 0,
     database: '',   // resolved from selected mandant's cDB
-    steuerzoneId: 0,
-    warenlagerId: 0,
-    spracheId: 0,
-    rootKategorieId: 0,
+    kShop: 0,
   },
   service: {
     mode: 'embedded', // 'embedded' | 'windows-service'

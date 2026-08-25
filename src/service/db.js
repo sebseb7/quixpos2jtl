@@ -100,10 +100,16 @@ async function connect(dbCfgOverride) {
     notifyConnectionState('connected');
     logger.success(`MSSQL connected: ${config.server}:${config.port || 1433}/${config.database}`);
 
-    // Auto-initialize active shop ID
+    // Auto-initialize active shop ID and derived parameters
     try {
       const shopId = await fetchActiveShop(pool);
-      logger.info(`Active JTL shop ID: ${shopId}`);
+      const { getActiveShopDetails } = require('./jtl/shop');
+      const details = getActiveShopDetails();
+      if (details) {
+        logger.info(`Active JTL POS shop: #${shopId} "${details.cName}" (Steuerzone: ${details.kSteuerzone ?? 0}, Warenlager: ${details.kWarenlager ?? 0}, Sprache: ${details.kSprache ?? 0}, Root-Kat: ${details.kKategorie ?? 0})`);
+      } else {
+        logger.info(`Active JTL shop ID: ${shopId}`);
+      }
     } catch (err) {
       logger.warn(`Could not fetch active shop ID: ${err.message}`);
     }

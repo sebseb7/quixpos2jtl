@@ -151,29 +151,41 @@
               </div>
               <p class="hint-text" id="shopMandantDb"></p>
             </div>
-            <div class="form-group">
-              <label for="shopSteuerzone">Steuerzone</label>
-              <select id="shopSteuerzone" class="shop-select">
-                <option value="">—</option>
+            <div class="form-group form-group-full">
+              <label for="shopSelect">Shop</label>
+              <select id="shopSelect" class="shop-select">
+                <option value="">— Select Shop —</option>
               </select>
             </div>
-            <div class="form-group">
-              <label for="shopWarenlager">Warenlager</label>
-              <select id="shopWarenlager" class="shop-select">
-                <option value="">—</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="shopSprache">Sprache</label>
-              <select id="shopSprache" class="shop-select">
-                <option value="">—</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="shopKategorie">Root-Kategorie</label>
-              <select id="shopKategorie" class="shop-select">
-                <option value="">—</option>
-              </select>
+            <div class="form-group form-group-full hidden" id="shopDerivedDetails">
+              <div class="shop-details-card">
+                <div class="shop-details-header">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                  <span>Derived Shop Configuration</span>
+                </div>
+                <div class="shop-details-grid">
+                  <div class="shop-detail-item">
+                    <span class="shop-detail-label">Firma / Land</span>
+                    <span class="shop-detail-value" id="detailFirma">—</span>
+                  </div>
+                  <div class="shop-detail-item">
+                    <span class="shop-detail-label">Steuerzone</span>
+                    <span class="shop-detail-value" id="detailSteuerzone">—</span>
+                  </div>
+                  <div class="shop-detail-item">
+                    <span class="shop-detail-label">Warenlager</span>
+                    <span class="shop-detail-value" id="detailWarenlager">—</span>
+                  </div>
+                  <div class="shop-detail-item">
+                    <span class="shop-detail-label">Sprache</span>
+                    <span class="shop-detail-value" id="detailSprache">—</span>
+                  </div>
+                  <div class="shop-detail-item">
+                    <span class="shop-detail-label">Root-Kategorie</span>
+                    <span class="shop-detail-value" id="detailKategorie">—</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

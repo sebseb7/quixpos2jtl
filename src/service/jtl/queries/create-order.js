@@ -1,16 +1,14 @@
 const sql = require('mssql');
 const { getPool } = require('../../db');
-const { getActiveShopId, getActiveShopSubshopId } = require('../shop');
+const { getActiveShopId, getActiveShopSubshopId, getActiveLanguageId } = require('../shop');
 const { logger } = require('../../logger');
 const { deliverOrder } = require('./delivery/index');
-const { loadConfig } = require('../../../config');
 
 function getConfig() {
-  const cfg = loadConfig();
   return {
     kBenutzer: Number(process.env.JTL_KBENUTZER) || 1,
     kFirmaHistory: Number(process.env.JTL_KFIRMAHISTORY) || 0,
-    kSprache: Number(cfg.shop?.sprache || process.env.JTL_KSPRACHE) || 1,
+    kSprache: getActiveLanguageId(),
     kPlattform: Number(process.env.JTL_KPLATTFORM) || 7,
     kVersandArt: Number(process.env.JTL_KVERSANDART) || 0,
     kKundengruppe: Number(process.env.JTL_KKUNDENGRUPPE) || 0,

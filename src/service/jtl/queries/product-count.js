@@ -1,6 +1,6 @@
 const sql = require('mssql');
 const { getPool } = require('../../db');
-const { loadConfig } = require('../../../config');
+const { getActiveLanguageId } = require('../shop');
 const { CATEGORY_TREE_CTE, categoryTreeRequest, getRootCategoryId } = require('./category-tree');
 
 const PRODUCT_COUNT_SQL = `
@@ -28,8 +28,7 @@ WHERE a.cAktiv = 'Y'
 `;
 
 async function getProductCount({ cursor = 0, rootCategoryId = getRootCategoryId() } = {}) {
-  const cfg = loadConfig();
-  const languageId = Number(cfg.shop?.spracheId || cfg.shop?.sprache || process.env.LANGUAGE_ID) || 1;
+  const languageId = getActiveLanguageId();
 
   const result = await categoryTreeRequest(getPool(), rootCategoryId)
     .input('cursor', sql.BigInt, cursor)

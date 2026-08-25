@@ -1,5 +1,5 @@
 const sql = require('mssql');
-const { loadConfig } = require('../../../../config');
+const { getActiveWarehouseId } = require('../../shop');
 
 let cachedWarenLager = null;
 let cachedWarenLagerPlatz = null;
@@ -9,10 +9,9 @@ async function getOutgoingWarehouse(transaction) {
     return cachedWarenLager;
   }
 
-  const cfg = loadConfig();
-  const configured = Number(cfg.shop?.warenlager || process.env.JTL_KWARENLAGER);
-  if (Number.isInteger(configured) && configured > 0) {
-    cachedWarenLager = configured;
+  const warehouseId = getActiveWarehouseId();
+  if (Number.isInteger(warehouseId) && warehouseId > 0) {
+    cachedWarenLager = warehouseId;
     return cachedWarenLager;
   }
 

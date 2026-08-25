@@ -184,27 +184,51 @@ async function queryShopOptions(dbCfg) {
       // eazybusiness might not exist
     }
 
-    let steuerzonen = [];
-    let warenlager = [];
-    let sprachen = [];
-    let kategorien = [];
-
+    let shops = [];
     if (dbCfg.database) {
       try {
-        const tz = await req.query(`SELECT kSteuerzone, cName FROM [${dbName}].[dbo].[tSteuerzone] ORDER BY kSteuerzone`);
-        steuerzonen = tz.recordset;
-      } catch { /* ignore */ }
-      try {
-        const wl = await req.query(`SELECT kWarenLager, cName FROM [${dbName}].[dbo].[tWarenLager] ORDER BY kWarenLager`);
-        warenlager = wl.recordset;
-      } catch { /* ignore */ }
-      try {
-        const sp = await req.query(`SELECT kSprache, cNameEng FROM [${dbName}].[dbo].[tSpracheUsed] ORDER BY kSprache`);
-        sprachen = sp.recordset;
-      } catch { /* ignore */ }
-      try {
-        const kat = await req.query(`SELECT kKategorie, cName FROM [${dbName}].[dbo].[tKategorieSprache] ORDER BY kKategorie`);
-        kategorien = kat.recordset;
+        const shopRes = await req.query(`
+          SELECT
+            s.kShop,
+            s.cName,
+            s.nGesperrt,
+            s.kFirma,
+            s.kKategorie,
+            s.nTyp,
+            s.kWarenlager,
+            s.nAktiv,
+            s.kSprache,
+            f.cName AS cFirmaName,
+            f.cLandISO,
+            tz.kSteuerzone,
+            tz.cName AS cSteuerzoneName,
+            wl.cName AS cWarenlagerName,
+            sp.cNameEng AS cSpracheName,
+            CASE
+              WHEN s.kKategorie = 0 THEN 'Alle Kategorien (Root)'
+              ELSE ISNULL(kat.cName, 'Kategorie ' + CAST(s.kKategorie AS varchar(20)))
+            END AS cKategorieName
+          FROM [${dbName}].[dbo].[tShop] s
+          LEFT JOIN [${dbName}].[dbo].[tFirma] f ON f.kFirma = s.kFirma
+          OUTER APPLY (
+            SELECT TOP 1 sz.kSteuerzone, sz.cName
+            FROM [${dbName}].[dbo].[tSteuerzone] sz
+            INNER JOIN [${dbName}].[dbo].[tSteuerzoneLand] szl ON szl.kSteuerzone = sz.kSteuerzone
+            WHERE sz.kFirma = s.kFirma AND szl.cISO = f.cLandISO
+            ORDER BY sz.kSteuerzone
+          ) tz
+          LEFT JOIN [${dbName}].[dbo].[tWarenLager] wl ON wl.kWarenLager = s.kWarenlager
+          LEFT JOIN [${dbName}].[dbo].[tSpracheUsed] sp ON sp.kSprache = s.kSprache
+          OUTER APPLY (
+            SELECT TOP 1 ks.cName
+            FROM [${dbName}].[dbo].[tKategorieSprache] ks
+            WHERE ks.kKategorie = s.kKategorie
+            ORDER BY CASE WHEN ks.kSprache = s.kSprache THEN 0 ELSE 1 END
+          ) kat
+          WHERE s.nTyp = 4 AND s.nAktiv = 1 AND s.nGesperrt = 0
+          ORDER BY s.kShop
+        `);
+        shops = shopRes.recordset;
       } catch { /* ignore */ }
     }
 
@@ -212,13 +236,10 @@ async function queryShopOptions(dbCfg) {
     return {
       success: true,
       mandants,
-      steuerzonen,
-      warenlager,
-      sprachen,
-      kategorien,
+      shops,
     };
   } catch (err) {
-    return { success: false, error: err.message };
+    return { success: false, error: err.message, mandants: [], shops: [] };
   }
 }
 
@@ -316,11 +337,8 @@ async function editShopSettings(rl, config) {
     console.log(`\n${C.cyan}${C.bright}=== JTL-Wawi Shop Settings ===${C.reset}`);
     console.log(`[1] Mandant ID     : ${C.green}${config.shop?.mandantId ?? 0}${C.reset}`);
     console.log(`[2] Shop Database  : ${C.green}${config.shop?.database || config.db?.database || '(auto)'}${C.reset}`);
-    console.log(`[3] Steuerzone ID  : ${C.green}${config.shop?.steuerzoneId ?? 0}${C.reset}`);
-    console.log(`[4] Warenlager ID  : ${C.green}${config.shop?.warenlagerId ?? 0}${C.reset}`);
-    console.log(`[5] Sprache ID     : ${C.green}${config.shop?.spracheId ?? 0}${C.reset}`);
-    console.log(`[6] Root-Kat ID    : ${C.green}${config.shop?.rootKategorieId ?? 0}${C.reset}`);
-    console.log(`[7] Auto-Select from JTL-Wawi Database (Live Query)`);
+    console.log(`[3] POS Shop ID    : ${C.green}${config.shop?.kShop ?? 0}${C.reset}`);
+    console.log(`[4] Auto-Select POS Shop from Database (Live Query)`);
     console.log(`[0] Back to Main Menu`);
 
     const choice = await askQuestion(rl, '\nSelect option');
@@ -340,28 +358,15 @@ async function editShopSettings(rl, config) {
         break;
       }
       case '3': {
-        const val = await askQuestion(rl, 'Enter Steuerzone ID (kSteuerzone)', String(config.shop.steuerzoneId ?? 0));
-        config.shop.steuerzoneId = parseInt(val, 10) || 0;
+        const val = await askQuestion(rl, 'Enter POS Shop ID (kShop)', String(config.shop.kShop ?? 0));
+        config.shop.kShop = parseInt(val, 10) || 0;
         break;
       }
       case '4': {
-        const val = await askQuestion(rl, 'Enter Warenlager ID (kWarenLager)', String(config.shop.warenlagerId ?? 0));
-        config.shop.warenlagerId = parseInt(val, 10) || 0;
-        break;
-      }
-      case '5': {
-        const val = await askQuestion(rl, 'Enter Sprache ID (kSprache)', String(config.shop.spracheId ?? 0));
-        config.shop.spracheId = parseInt(val, 10) || 0;
-        break;
-      }
-      case '6': {
-        const val = await askQuestion(rl, 'Enter Root-Kategorie ID (kKategorie, 0 for all)', String(config.shop.rootKategorieId ?? 0));
-        config.shop.rootKategorieId = parseInt(val, 10) || 0;
-        break;
-      }
-      case '7': {
-        console.log(`\n${C.gray}Querying shop options from ${config.db.server}/${config.db.database}...${C.reset}`);
-        const res = await queryShopOptions(config.db);
+        const targetDb = config.shop?.database || config.db?.database;
+        console.log(`\n${C.gray}Querying shop options from ${config.db.server}/${targetDb}...${C.reset}`);
+        const effectiveDbConfig = { ...config.db, database: targetDb };
+        const res = await queryShopOptions(effectiveDbConfig);
         if (!res.success) {
           console.log(`${C.red}✗ Failed to query shop options: ${res.error}${C.reset}`);
           break;
@@ -371,7 +376,7 @@ async function editShopSettings(rl, config) {
         if (res.mandants?.length) {
           console.log(`\n${C.yellow}Available Mandants:${C.reset}`);
           res.mandants.forEach((m, i) => console.log(` [${i + 1}] ID: ${m.kMandant} - "${m.cName}" (DB: ${m.cDB})`));
-          const p = await askQuestion(rl, 'Select Mandant number (or Enter to keep)');
+          const p = await askQuestion(rl, 'Select Mandant number (or Enter to keep current)');
           const idx = parseInt(p, 10) - 1;
           if (idx >= 0 && idx < res.mandants.length) {
             config.shop.mandantId = res.mandants[idx].kMandant;
@@ -381,40 +386,20 @@ async function editShopSettings(rl, config) {
           }
         }
 
-        // Steuerzonen
-        if (res.steuerzonen?.length) {
-          console.log(`\n${C.yellow}Available Steuerzonen:${C.reset}`);
-          res.steuerzonen.forEach((tz, i) => console.log(` [${i + 1}] ID: ${tz.kSteuerzone} - "${tz.cName}"`));
-          const p = await askQuestion(rl, 'Select Steuerzone number (or Enter to keep)');
+        // Shops
+        if (res.shops?.length) {
+          console.log(`\n${C.yellow}Available POS Shops (nTyp = 4, nAktiv = 1, nGesperrt = 0):${C.reset}`);
+          res.shops.forEach((s, i) => {
+            console.log(` [${i + 1}] ID: ${s.kShop} - "${s.cName}" | Firma: ${s.cFirmaName || s.kFirma} (${s.cLandISO || '—'}) | Steuerzone: ${s.cSteuerzoneName || s.kSteuerzone} | Lager: ${s.cWarenlagerName || s.kWarenlager} | Sprache: ${s.cSpracheName || s.kSprache} | Root-Kat: ${s.cKategorieName || s.kKategorie}`);
+          });
+          const p = await askQuestion(rl, 'Select Shop number (or Enter to keep current)');
           const idx = parseInt(p, 10) - 1;
-          if (idx >= 0 && idx < res.steuerzonen.length) {
-            config.shop.steuerzoneId = res.steuerzonen[idx].kSteuerzone;
-            console.log(`${C.green}✓ Set Steuerzone ID: ${config.shop.steuerzoneId}${C.reset}`);
+          if (idx >= 0 && idx < res.shops.length) {
+            config.shop.kShop = res.shops[idx].kShop;
+            console.log(`${C.green}✓ Set POS Shop to: "${res.shops[idx].cName}" (kShop: ${config.shop.kShop})${C.reset}`);
           }
-        }
-
-        // Warenlager
-        if (res.warenlager?.length) {
-          console.log(`\n${C.yellow}Available Warenlager:${C.reset}`);
-          res.warenlager.forEach((wl, i) => console.log(` [${i + 1}] ID: ${wl.kWarenLager} - "${wl.cName}"`));
-          const p = await askQuestion(rl, 'Select Warenlager number (or Enter to keep)');
-          const idx = parseInt(p, 10) - 1;
-          if (idx >= 0 && idx < res.warenlager.length) {
-            config.shop.warenlagerId = res.warenlager[idx].kWarenLager;
-            console.log(`${C.green}✓ Set Warenlager ID: ${config.shop.warenlagerId}${C.reset}`);
-          }
-        }
-
-        // Sprachen
-        if (res.sprachen?.length) {
-          console.log(`\n${C.yellow}Available Sprachen:${C.reset}`);
-          res.sprachen.forEach((sp, i) => console.log(` [${i + 1}] ID: ${sp.kSprache} - "${sp.cNameEng}"`));
-          const p = await askQuestion(rl, 'Select Sprache number (or Enter to keep)');
-          const idx = parseInt(p, 10) - 1;
-          if (idx >= 0 && idx < res.sprachen.length) {
-            config.shop.spracheId = res.sprachen[idx].kSprache;
-            console.log(`${C.green}✓ Set Sprache ID: ${config.shop.spracheId}${C.reset}`);
-          }
+        } else {
+          console.log(`${C.yellow}No POS shops (nTyp=4, nAktiv=1, nGesperrt=0) found in database.${C.reset}`);
         }
 
         break;
@@ -648,7 +633,7 @@ async function runCliEditor() {
   while (true) {
     console.log(`\n${C.cyan}${C.bright}=== Main Menu ===${C.reset}`);
     console.log(`[1] Database Connection (${config.db.server}:${config.db.port || 1433}/${config.db.database || 'none'})`);
-    console.log(`[2] JTL-Wawi Shop Settings (Mandant: ${config.shop?.mandantId ?? 0}, Shop DB: ${config.shop?.database || config.db.database || 'none'})`);
+    console.log(`[2] JTL-Wawi Shop Settings (Mandant: ${config.shop?.mandantId ?? 0}, POS Shop ID: ${config.shop?.kShop ?? 0})`);
     console.log(`[3] Network & Ports (HTTP :${config.network?.httpPort || 8087}, HTTPS :${config.network?.httpsPort || 4447})`);
     console.log(`[4] TLS Certificate Settings`);
     console.log(`[5] JTL-POS Pairing PIN & Paired Devices`);
@@ -796,17 +781,8 @@ async function handleCliFlags() {
   const mandantDb = getArgVal('--mandant-db');
   if (mandantDb !== null) { config.shop = config.shop || {}; config.shop.database = mandantDb; modifiedConfig = true; }
 
-  const steuerzoneId = getArgVal('--steuerzone-id') || getArgVal('--taxzone');
-  if (steuerzoneId !== null) { config.shop = config.shop || {}; config.shop.steuerzoneId = parseInt(steuerzoneId, 10) || 0; modifiedConfig = true; }
-
-  const warenlagerId = getArgVal('--warenlager-id') || getArgVal('--warehouse');
-  if (warenlagerId !== null) { config.shop = config.shop || {}; config.shop.warenlagerId = parseInt(warenlagerId, 10) || 0; modifiedConfig = true; }
-
-  const spracheId = getArgVal('--sprache-id') || getArgVal('--language');
-  if (spracheId !== null) { config.shop = config.shop || {}; config.shop.spracheId = parseInt(spracheId, 10) || 0; modifiedConfig = true; }
-
-  const rootKatId = getArgVal('--kategorie-id') || getArgVal('--category');
-  if (rootKatId !== null) { config.shop = config.shop || {}; config.shop.rootKategorieId = parseInt(rootKatId, 10) || 0; modifiedConfig = true; }
+  const kShop = getArgVal('--kshop') || getArgVal('--shop-id') || getArgVal('--shop');
+  if (kShop !== null) { config.shop = config.shop || {}; config.shop.kShop = parseInt(kShop, 10) || 0; modifiedConfig = true; }
 
   // Save if flags modified
   if (modifiedConfig) {
@@ -921,10 +897,7 @@ ${C.yellow}Direct Configuration Flags:${C.reset}
   --https-port <port>         Set HTTPS POS Port (default 4447)
   --mandant-id <id>           Set JTL Mandant ID
   --mandant-db <db>           Set JTL Mandant Database name
-  --taxzone <id>              Set Steuerzone ID
-  --warehouse <id>            Set Warenlager ID
-  --language <id>             Set Sprache ID
-  --category <id>             Set Root Category ID
+  --kshop <id>, --shop-id <id> Set JTL POS Shop ID (derives taxzone, warehouse, language, category)
 
 ${C.yellow}Pairing & Certificate Commands:${C.reset}
   --pin <pin>                 Set active pairing PIN for JTL-POS

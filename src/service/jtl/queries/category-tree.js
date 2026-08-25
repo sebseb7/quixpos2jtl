@@ -1,10 +1,9 @@
 const sql = require('mssql');
-const { getActiveShopId } = require('../shop');
-const { loadConfig } = require('../../../config');
+const { getActiveShopId, getActiveRootCategoryId } = require('../shop');
 
 const CATEGORY_TREE_CTE = `
 WITH CategoryTree AS (
-    SELECT kKategorie FROM dbo.tKategorie WHERE kKategorie = @rootCategoryId
+    SELECT kKategorie FROM dbo.tKategorie WHERE (@rootCategoryId = 0 AND kOberKategorie = 0) OR (@rootCategoryId <> 0 AND kKategorie = @rootCategoryId)
     UNION ALL
     SELECT t.kKategorie
     FROM dbo.tKategorie t
@@ -12,8 +11,7 @@ WITH CategoryTree AS (
 )`;
 
 function getRootCategoryId() {
-  const cfg = loadConfig();
-  return Number(cfg.shop?.kategorie || process.env.ROOT_CATEGORY_ID) || 1;
+  return getActiveRootCategoryId();
 }
 
 function categoryTreeRequest(pool, rootCategoryId = getRootCategoryId()) {

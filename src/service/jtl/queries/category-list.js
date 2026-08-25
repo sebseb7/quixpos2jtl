@@ -1,6 +1,6 @@
 const sql = require('mssql');
 const { getPool } = require('../../db');
-const { loadConfig } = require('../../../config');
+const { getActiveLanguageId } = require('../shop');
 const { CATEGORY_TREE_CTE, categoryTreeRequest, getRootCategoryId } = require('./category-tree');
 
 const CATEGORY_LIST_SQL = `
@@ -27,7 +27,7 @@ CROSS APPLY (
     ((SELECT MAX(CONVERT(BIGINT, ksh.bRowversion)) FROM dbo.tKategorieShop ksh WHERE ksh.kKategorie = k.kKategorie AND (@kShop = 0 OR ksh.kShop = @kShop)))
   ) AS t(v)
 ) rv
-WHERE k.kKategorie IN (SELECT kKategorie FROM CategoryTree WHERE kKategorie <> @rootCategoryId)
+WHERE k.kKategorie IN (SELECT kKategorie FROM CategoryTree WHERE (@rootCategoryId = 0 OR kKategorie <> @rootCategoryId))
   AND k.cAktiv = 'Y'
   AND (@kShop = 0 OR EXISTS (SELECT 1 FROM dbo.tKategorieShop ks2 WHERE ks2.kKategorie = k.kKategorie AND ks2.kShop = @kShop))
   AND rv.lastChanged > @cursor
@@ -35,8 +35,7 @@ ORDER BY rv.lastChanged ASC;
 `;
 
 async function getCategoryList({ cursor = 0, limit = 20, rootCategoryId = getRootCategoryId() } = {}) {
-  const cfg = loadConfig();
-  const languageId = Number(cfg.shop?.sprache || process.env.LANGUAGE_ID) || 1;
+  const languageId = getActiveLanguageId();
 
   const result = await categoryTreeRequest(getPool(), rootCategoryId)
     .input('cursor', sql.BigInt, cursor)

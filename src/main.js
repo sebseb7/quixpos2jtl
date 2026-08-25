@@ -327,7 +327,7 @@ function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('list-shop-options', async (_e, dbConfig) => {
+  ipcMain.handle('list-shops', async (_e, dbConfig) => {
     try {
       const dbName = String(dbConfig.database || '').replace(/]/g, ']]');
       const sqlConfig = {
@@ -344,21 +344,51 @@ function registerIpcHandlers() {
       };
       const pool = await sql.connect(sqlConfig);
       const request = pool.request();
-      const tz = await request.query(
-        `SELECT kSteuerzone, cName FROM [${dbName}].[dbo].[tSteuerzone] ORDER BY kSteuerzone`);
-      const wl = await request.query(
-        `SELECT kWarenLager, cName FROM [${dbName}].[dbo].[tWarenLager] ORDER BY kWarenLager`);
-      const sp = await request.query(
-        `SELECT kSprache, cNameEng FROM [${dbName}].[dbo].[tSpracheUsed] ORDER BY kSprache`);
-      const kat = await request.query(
-        `SELECT kKategorie, cName FROM [${dbName}].[dbo].[tKategorieSprache] ORDER BY kKategorie`);
+      const result = await request.query(`
+        SELECT
+          s.kShop,
+          s.cName,
+          s.nGesperrt,
+          s.kFirma,
+          s.kKategorie,
+          s.nTyp,
+          s.kWarenlager,
+          s.nAktiv,
+          s.kSprache,
+          f.cName AS cFirmaName,
+          f.cLandISO,
+          tz.kSteuerzone,
+          tz.cName AS cSteuerzoneName,
+          wl.cName AS cWarenlagerName,
+          sp.cNameEng AS cSpracheName,
+          CASE
+            WHEN s.kKategorie = 0 THEN 'Alle Kategorien (Root)'
+            ELSE ISNULL(kat.cName, 'Kategorie ' + CAST(s.kKategorie AS varchar(20)))
+          END AS cKategorieName
+        FROM [${dbName}].[dbo].[tShop] s
+        LEFT JOIN [${dbName}].[dbo].[tFirma] f ON f.kFirma = s.kFirma
+        OUTER APPLY (
+          SELECT TOP 1 sz.kSteuerzone, sz.cName
+          FROM [${dbName}].[dbo].[tSteuerzone] sz
+          INNER JOIN [${dbName}].[dbo].[tSteuerzoneLand] szl ON szl.kSteuerzone = sz.kSteuerzone
+          WHERE sz.kFirma = s.kFirma AND szl.cISO = f.cLandISO
+          ORDER BY sz.kSteuerzone
+        ) tz
+        LEFT JOIN [${dbName}].[dbo].[tWarenLager] wl ON wl.kWarenLager = s.kWarenlager
+        LEFT JOIN [${dbName}].[dbo].[tSpracheUsed] sp ON sp.kSprache = s.kSprache
+        OUTER APPLY (
+          SELECT TOP 1 ks.cName
+          FROM [${dbName}].[dbo].[tKategorieSprache] ks
+          WHERE ks.kKategorie = s.kKategorie
+          ORDER BY CASE WHEN ks.kSprache = s.kSprache THEN 0 ELSE 1 END
+        ) kat
+        WHERE s.nTyp = 4 AND s.nAktiv = 1 AND s.nGesperrt = 0
+        ORDER BY s.kShop
+      `);
       await pool.close();
       return {
         success: true,
-        steuerzonen: tz.recordset,
-        warenlager: wl.recordset,
-        sprachen: sp.recordset,
-        kategorien: kat.recordset,
+        shops: result.recordset,
       };
     } catch (err) {
       return { success: false, error: err.message };

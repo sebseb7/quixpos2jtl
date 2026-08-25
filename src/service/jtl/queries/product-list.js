@@ -2,14 +2,18 @@ const sql = require('mssql');
 const { getPool } = require('../../db');
 const { getCustomerGroupIds } = require('./customer-groups');
 const { getProductAttributes } = require('./product-attributes');
-const { getActiveShopId } = require('../shop');
-const { loadConfig } = require('../../../config');
+const {
+  getActiveShopId,
+  getActiveLanguageId,
+  getActiveWarehouseId,
+  getActiveTaxZoneId,
+} = require('../shop');
 
 const PRODUCT_LIST_SQL = `
 WITH TaxRates AS (
   SELECT kSteuerklasse, fSteuersatz
   FROM dbo.tSteuersatz
-  WHERE kSteuerzone IN (SELECT kSteuerzone FROM dbo.tSteuerzone WHERE cName = @taxZoneName)
+  WHERE kSteuerzone = @taxZoneId
 )
 SELECT TOP (@limit)
   a.kArtikel AS id,
@@ -124,10 +128,10 @@ function grossPrice(netPrice, taxRate) {
 }
 
 async function getProductList({ cursor = 0, limit = 20 } = {}) {
-  const cfg = loadConfig();
-  const languageId = Number(cfg.shop?.spracheId || cfg.shop?.sprache || process.env.LANGUAGE_ID) || 1;
-  const taxZoneName = cfg.shop?.steuerzone || process.env.TAX_ZONE_NAME || 'Zone-EU';
-  const warenlagerId = Number(cfg.shop?.warenlagerId || cfg.shop?.warenlager || process.env.WARENLAGER_ID) || 1;
+  const languageId = getActiveLanguageId();
+  const taxZoneId = getActiveTaxZoneId();
+  const warenlagerId = getActiveWarehouseId();
+  const kShop = getActiveShopId();
 
   const pool = getPool();
 
@@ -137,9 +141,9 @@ async function getProductList({ cursor = 0, limit = 20 } = {}) {
       .input('cursor', sql.BigInt, cursor)
       .input('limit', sql.Int, limit)
       .input('languageId', sql.Int, languageId)
-      .input('taxZoneName', sql.NVarChar, taxZoneName)
+      .input('taxZoneId', sql.Int, taxZoneId)
       .input('warenlagerId', sql.Int, warenlagerId)
-      .input('kShop', sql.Int, getActiveShopId())
+      .input('kShop', sql.Int, kShop)
       .query(PRODUCT_LIST_SQL),
     getCustomerGroupIds(),
   ]);

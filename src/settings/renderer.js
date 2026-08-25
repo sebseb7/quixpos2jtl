@@ -85,10 +85,7 @@ async function loadConfig() {
 
   // Shop
   shopState.mandantId = cfg.shop?.mandantId || 0;
-  shopState.steuerzoneId = cfg.shop?.steuerzoneId || 0;
-  shopState.warenlagerId = cfg.shop?.warenlagerId || 0;
-  shopState.spracheId = cfg.shop?.spracheId || 0;
-  shopState.rootKategorieId = cfg.shop?.rootKategorieId || 0;
+  shopState.kShop = cfg.shop?.kShop || cfg.shop?.shopId || 0;
 
   updateShopTabAvailability();
 }
@@ -97,10 +94,8 @@ async function loadConfig() {
 
 const shopState = {
   mandantId: 0,
-  steuerzoneId: 0,
-  warenlagerId: 0,
-  spracheId: 0,
-  rootKategorieId: 0,
+  kShop: 0,
+  shops: [],
 };
 
 function isDatabaseSelected() {
@@ -116,23 +111,6 @@ function updateShopTabAvailability() {
   tabBtn.title = enabled ? '' : 'Connect to a database first';
   locked.classList.toggle('hidden', enabled);
   form.classList.toggle('hidden', !enabled);
-}
-
-function fillSelect(select, items, valueKey, labelKey, selectedValue) {
-  select.innerHTML = '';
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = '—';
-  select.appendChild(placeholder);
-  for (const item of items) {
-    const opt = document.createElement('option');
-    opt.value = String(item[valueKey]);
-    opt.textContent = `${item[labelKey]} (${item[valueKey]})`;
-    select.appendChild(opt);
-  }
-  if (selectedValue && items.some((i) => String(i[valueKey]) === String(selectedValue))) {
-    select.value = String(selectedValue);
-  }
 }
 
 async function refreshShopOptions() {
@@ -181,18 +159,61 @@ async function onMandantChanged(loadOptions = true) {
   const dbConfig = gatherConfig().db;
   // Query against the mandant's own database if it differs
   const effectiveDb = mandantDb || dbConfig.database;
-  const res = await window.api.listShopOptions({ ...dbConfig, database: effectiveDb });
+  const res = await window.api.listShops({ ...dbConfig, database: effectiveDb });
   if (!res.success) {
     const result = document.getElementById('testResult');
-    result.textContent = `✗ Shop options: ${res.error}`;
+    result.textContent = `✗ Shops: ${res.error}`;
     result.className = 'test-result error';
     return;
   }
 
-  fillSelect(document.getElementById('shopSteuerzone'), res.steuerzonen, 'kSteuerzone', 'cName', shopState.steuerzoneId);
-  fillSelect(document.getElementById('shopWarenlager'), res.warenlager, 'kWarenLager', 'cName', shopState.warenlagerId);
-  fillSelect(document.getElementById('shopSprache'), res.sprachen, 'kSprache', 'cNameEng', shopState.spracheId);
-  fillSelect(document.getElementById('shopKategorie'), res.kategorien, 'kKategorie', 'cName', shopState.rootKategorieId);
+  shopState.shops = res.shops || [];
+  const shopSelect = document.getElementById('shopSelect');
+  shopSelect.innerHTML = '';
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '— Select Shop —';
+  shopSelect.appendChild(placeholder);
+
+  for (const s of shopState.shops) {
+    const opt = document.createElement('option');
+    opt.value = String(s.kShop);
+    opt.textContent = `${s.cName} (ID: ${s.kShop})`;
+    shopSelect.appendChild(opt);
+  }
+
+  if (shopState.kShop && shopState.shops.some((s) => s.kShop === shopState.kShop)) {
+    shopSelect.value = String(shopState.kShop);
+  } else if (shopState.shops.length === 1) {
+    shopSelect.value = String(shopState.shops[0].kShop);
+    shopState.kShop = shopState.shops[0].kShop;
+  }
+
+  updateDerivedShopDetails();
+}
+
+function updateDerivedShopDetails() {
+  const shopSelect = document.getElementById('shopSelect');
+  const detailsContainer = document.getElementById('shopDerivedDetails');
+  const selectedShopId = parseInt(shopSelect.value, 10);
+  const shop = shopState.shops.find((s) => s.kShop === selectedShopId);
+  if (!shop) {
+    detailsContainer.classList.add('hidden');
+    return;
+  }
+
+  detailsContainer.classList.remove('hidden');
+  document.getElementById('detailFirma').textContent = `${shop.cFirmaName || 'Firma #' + shop.kFirma} (${shop.cLandISO || '—'})`;
+  document.getElementById('detailSteuerzone').textContent = shop.cSteuerzoneName
+    ? `${shop.cSteuerzoneName} (ID: ${shop.kSteuerzone ?? 0})`
+    : (shop.kSteuerzone ? `ID: ${shop.kSteuerzone}` : '—');
+  document.getElementById('detailWarenlager').textContent = shop.cWarenlagerName
+    ? `${shop.cWarenlagerName} (ID: ${shop.kWarenlager ?? 0})`
+    : (shop.kWarenlager ? `ID: ${shop.kWarenlager}` : '—');
+  document.getElementById('detailSprache').textContent = shop.cSpracheName
+    ? `${shop.cSpracheName} (ID: ${shop.kSprache ?? 0})`
+    : (shop.kSprache ? `ID: ${shop.kSprache}` : '—');
+  document.getElementById('detailKategorie').textContent = shop.cKategorieName || (shop.kKategorie === 0 ? 'Alle Kategorien (Root / ID: 0)' : `ID: ${shop.kKategorie}`);
 }
 
 function gatherConfig() {
@@ -214,10 +235,7 @@ function gatherConfig() {
       mandantId: parseInt(document.getElementById('shopMandant').value, 10) || 0,
       database: document.getElementById('shopMandant').selectedOptions[0]?.dataset.db
         || document.getElementById('dbDatabase').value,
-      steuerzoneId: parseInt(document.getElementById('shopSteuerzone').value, 10) || 0,
-      warenlagerId: parseInt(document.getElementById('shopWarenlager').value, 10) || 0,
-      spracheId: parseInt(document.getElementById('shopSprache').value, 10) || 0,
-      rootKategorieId: parseInt(document.getElementById('shopKategorie').value, 10) || 0,
+      kShop: parseInt(document.getElementById('shopSelect').value, 10) || 0,
     },
   };
 }
@@ -245,6 +263,10 @@ function bindActions() {
   });
   document.getElementById('btnRefreshShop').addEventListener('click', refreshShopOptions);
   document.getElementById('shopMandant').addEventListener('change', () => onMandantChanged(true));
+  document.getElementById('shopSelect').addEventListener('change', () => {
+    shopState.kShop = parseInt(document.getElementById('shopSelect').value, 10) || 0;
+    updateDerivedShopDetails();
+  });
 
   // Test Connection
   document.getElementById('btnTestConnection').addEventListener('click', async () => {

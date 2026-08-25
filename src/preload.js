@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Shop (JTL-Wawi)
   listMandants: (dbConfig) => ipcRenderer.invoke('list-mandants', dbConfig),
-  listShopOptions: (dbConfig) => ipcRenderer.invoke('list-shop-options', dbConfig),
+  listShops: (dbConfig) => ipcRenderer.invoke('list-shops', dbConfig),
 
   // Certificate
   generateCert: (options) => ipcRenderer.invoke('generate-cert', options),

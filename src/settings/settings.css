@@ -354,6 +354,56 @@ input::placeholder {
   font-size: 13px;
 }
 
+/* Derived Shop Details Card */
+.shop-details-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-top: 4px;
+}
+
+.shop-details-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.shop-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.shop-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border-radius: var(--radius-xs, 4px);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+}
+
+.shop-detail-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.shop-detail-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
 /* Password wrapper */
 .password-wrapper {
   position: relative;
