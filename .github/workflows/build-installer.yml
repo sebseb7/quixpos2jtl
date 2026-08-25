@@ -44,6 +44,9 @@ jobs:
       - name: Build installer
         run: npm run build:installer
 
+      - name: Build Linux CLI
+        run: npm run build:cli:linux
+
       - name: Calculate installer SHA256
         id: checksum
         shell: bash
@@ -58,6 +61,13 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           path: ${{ steps.checksum.outputs.installer_path }}
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload Linux CLI artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/quixpos2jtl-cli-linux-x64.tar.gz
           archive: false
           if-no-files-found: error
 
