@@ -71,6 +71,11 @@ function getActiveTaxZoneName() {
   return activeShopDetails.cSteuerzoneName || '';
 }
 
+function getActiveFirmaId() {
+  assertShopConfigured();
+  return Number(activeShopDetails.kFirma) || null;
+}
+
 function getActiveUserId() {
   const config = loadConfig();
   const uid = Number(config.shop?.kBenutzer);
@@ -190,6 +195,7 @@ module.exports = {
   getActiveRootCategoryId,
   getActiveTaxZoneId,
   getActiveTaxZoneName,
+  getActiveFirmaId,
   getActiveUserId,
   getActiveBenutzerId,
   assertShopConfigured,

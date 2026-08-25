@@ -1,11 +1,11 @@
 const sql = require('mssql');
 const { getPool } = require('../../db');
-const { getActiveShopId, getActiveShopSubshopId } = require('../shop');
+const { getActiveShopId } = require('../shop');
 
 const CUSTOMER_LIST_SQL = `
 SELECT TOP (@Limit)
     vCustomer.kId,
-    ISNULL(tInetKundeShop.cShopKundenNr, vCustomer.cCustomerNumber) AS cCustomerNumber,
+    vCustomer.cCustomerNumber,
     vCustomer.cFirstName,
     vCustomer.cLastName,
     vCustomer.cTitle,
@@ -18,7 +18,7 @@ SELECT TOP (@Limit)
     vCustomer.cCountry,
     vCustomer.cPhone,
     vCustomer.cEmailAddress,
-    ISNULL(tInetKundeShop.kKundenGruppe, vCustomer.kCustomerGroupId) AS kCustomerGroupId,
+    vCustomer.kCustomerGroupId,
     vCustomer.cSalutation,
     vCustomer.cDateOfBirth,
     vCustomer.fDiscount,
@@ -30,10 +30,6 @@ SELECT TOP (@Limit)
     vCustomer.dInactive,
     vCustomer.nDebtorNumber
 FROM Pos.vCustomer
-LEFT JOIN dbo.tInetKundeShop
-    ON vCustomer.kId = tInetKundeShop.kKunde
-   AND tInetKundeShop.kShop = vCustomer.kShop
-   AND tInetKundeShop.kSubShop = @SubShopId
 WHERE vCustomer.kShop = @ShopId
   AND CONVERT(BIGINT, vCustomer.bLastChanged) > @bLastChanged
 ORDER BY vCustomer.bLastChanged ASC;
@@ -61,7 +57,6 @@ async function getCustomerList({ cursor = 0, limit = 20 } = {}) {
     .request()
     .input('Limit', sql.Int, limit)
     .input('ShopId', sql.Int, getActiveShopId())
-    .input('SubShopId', sql.Int, getActiveShopSubshopId())
     .input('bLastChanged', sql.BigInt, cursor)
     .query(CUSTOMER_LIST_SQL);
 

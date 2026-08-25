@@ -1,47 +1,15 @@
 const sql = require('mssql');
 const { getPool } = require('../../db');
-const { getActiveShopId, getActiveShopSubshopId, getActiveLanguageId, getActiveUserId } = require('../shop');
+const {
+  getActiveShopId,
+  getActiveShopSubshopId,
+  getActiveLanguageId,
+  getActiveUserId,
+  getActiveFirmaId,
+  assertShopConfigured,
+} = require('../shop');
 const { logger } = require('../../logger');
 const { deliverOrder } = require('./delivery/index');
-
-function getConfig() {
-  return {
-    kBenutzer: getActiveUserId(),
-    kFirmaHistory: Number(process.env.JTL_KFIRMAHISTORY) || 0,
-    kSprache: getActiveLanguageId(),
-    kPlattform: Number(process.env.JTL_KPLATTFORM) || 7,
-    kVersandArt: Number(process.env.JTL_KVERSANDART) || 0,
-    kKundengruppe: Number(process.env.JTL_KKUNDENGRUPPE) || 0,
-    orderNumberSequence: Number(process.env.JTL_ORDER_NUMBER_SEQUENCE) || 3,
-    customerNumberSequence: Number(process.env.JTL_CUSTOMER_NUMBER_SEQUENCE) || 6,
-  };
-}
-
-let resolvedDefaults = null;
-
-async function getDefaults() {
-  if (resolvedDefaults) {
-    return resolvedDefaults;
-  }
-
-  const config = getConfig();
-  const result = await getPool().request().input('kPlattform', sql.Int, config.kPlattform).query(`
-    SELECT
-      (SELECT MAX(kFirmaHistory) FROM dbo.tFirmaHistory) AS kFirmaHistory,
-      (SELECT MIN(kVersandArt) FROM dbo.tVersandArt) AS kVersandArt,
-      (SELECT TOP 1 kKundenGruppe FROM dbo.tKundenGruppe ORDER BY nStandard DESC, kKundenGruppe) AS kKundengruppe,
-      (SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.tPlattform WHERE nPlattform = @kPlattform) THEN @kPlattform ELSE 1 END) AS kPlattform;
-  `);
-  const row = result.recordset[0] || {};
-
-  resolvedDefaults = {
-    kFirmaHistory: config.kFirmaHistory || row.kFirmaHistory || 1,
-    kVersandArt: config.kVersandArt || row.kVersandArt || 1,
-    kKundengruppe: config.kKundengruppe || row.kKundengruppe || 1,
-    kPlattform: row.kPlattform || 1,
-  };
-  return resolvedDefaults;
-}
 
 const COUNTRY_NAMES = {
   DE: 'Deutschland',
@@ -105,6 +73,17 @@ async function nextNumberFromSequence(transaction, kLaufendeNummer, date) {
   return `${prefix}${row.nNummer}${suffix}`;
 }
 
+const ORDER_NUMBER_SEQUENCE = 3;
+const CUSTOMER_NUMBER_SEQUENCE = 6;
+
+async function nextOrderNumber(transaction, orderDate) {
+  return nextNumberFromSequence(transaction, ORDER_NUMBER_SEQUENCE, orderDate);
+}
+
+async function nextCustomerNumber(transaction) {
+  return nextNumberFromSequence(transaction, CUSTOMER_NUMBER_SEQUENCE, new Date());
+}
+
 async function allocatePk(transaction, tableName) {
   const result = await new sql.Request(transaction).input('cName', sql.NVarChar, tableName).query(`
     DECLARE @pk INT;
@@ -148,56 +127,31 @@ function isVersandposition(item) {
   return toNumber(item.type, 0) === VERSANDPOSITION_TYPE;
 }
 
-function hasVersandposition(items) {
-  return items.some(isVersandposition);
-}
-
-function hasNonReturnSaleItems(items) {
-  return items.some((item) => toNumber(item.isReturn, 0) === 0);
-}
-
-function shouldInjectSelbstabholerShipping(items) {
-  if (hasVersandposition(items)) return false;
-  return hasNonReturnSaleItems(items);
-}
-
-async function lookupVersandArt(transaction, shippingName) {
-  const name = String(shippingName ?? '').trim() || 'Selbstabholer';
-  const tryLookup = async (cName) => {
-    const result = await new sql.Request(transaction)
-      .input('cName', sql.NVarChar, cName)
-      .query(`
-        SELECT TOP 1 kVersandArt, cName, fPrice, fMwSt
-        FROM dbo.tVersandArt
-        WHERE cName = @cName
-      `);
-    return result.recordset[0] ?? null;
-  };
-
-  let row = await tryLookup(name);
-  if (!row && name !== 'Selbstabholer') {
-    row = await tryLookup('Selbstabholer');
+async function resolveVersandArt(transaction, shippingName) {
+  const name = String(shippingName ?? '').trim();
+  if (!name) {
+    throw new Error('No shipping method (shippingName) specified in order request');
   }
-  return row;
-}
-
-function syntheticShippingItem(versandArt) {
-  const vat = toNumber(versandArt.fMwSt, 19);
-  const gross = toNumber(versandArt.fPrice, 0);
-  const net = gross / (1 + vat / 100);
-  return {
-    type: String(VERSANDPOSITION_TYPE),
-    quantity: '1',
-    name: versandArt.cName,
-    priceGross: String(gross),
-    priceNet: String(net),
-    vat: String(vat),
-    isReturn: '0',
-  };
+  const result = await new sql.Request(transaction)
+    .input('cName', sql.NVarChar, name)
+    .query(`
+      SELECT TOP 1 v.kVersandArt, v.cName, v.fPrice, v.fMwSt
+      FROM dbo.tVersandArt v
+      LEFT JOIN dbo.tVersandArtSprache vs ON vs.kVersandArt = v.kVersandArt
+      WHERE v.cName = @cName OR vs.cName = @cName
+    `);
+  const versandArt = result.recordset[0] ?? null;
+  if (!versandArt?.kVersandArt) {
+    throw new Error(`Shipping method '${name}' not found in dbo.tVersandArt`);
+  }
+  return versandArt;
 }
 
 async function resolveZahlungsart(transaction, name, cache) {
-  const lookupName = String(name || 'Bar');
+  const lookupName = String(name || '').trim();
+  if (!lookupName) {
+    throw new Error('No payment method specified in order request');
+  }
   const cacheKey = lookupName.toLowerCase();
   const cached = cache.get(cacheKey);
   if (cached) {
@@ -229,38 +183,64 @@ async function resolveZahlungsart(transaction, name, cache) {
     row = ci.recordset[0] ?? null;
   }
 
-  let zahlungsart;
-  if (row) {
-    zahlungsart = { kZahlungsart: row.kZahlungsart, cName: row.cName };
-  } else {
-    const kZahlungsart = await allocatePk(transaction, 'tZahlungsart');
-    await new sql.Request(transaction)
-      .input('kZahlungsart', sql.Int, kZahlungsart)
-      .input('cName', sql.NVarChar, lookupName)
-      .query(`
-        INSERT INTO dbo.tZahlungsart
-          (kZahlungsart, cName, cPrtString, nLastschrift, cPrtStringVor, cPaymentOption, cKonto,
-           nAusliefernVorZahlung, nPrioritaet, nMahnwesenAktiv, fSkontoWert, nSkontoZeitraum,
-           nMatchingOptionen, nIstStandard, nAktiv)
-        VALUES (@kZahlungsart, @cName, '', 0, '', '', '', 0, 0, 0, 0, 0, 0, 0, 1)
-      `);
-    zahlungsart = { kZahlungsart, cName: lookupName };
+  if (!row) {
+    throw new Error(`Payment method '${lookupName}' not found in dbo.tZahlungsart`);
   }
 
+  const zahlungsart = { kZahlungsart: row.kZahlungsart, cName: row.cName };
   cache.set(cacheKey, zahlungsart);
   return zahlungsart;
 }
 
-async function nextCustomerNumber(transaction) {
-  const config = getConfig();
-  return nextNumberFromSequence(transaction, config.customerNumberSequence, new Date());
+async function resolveFirmaHistory(transaction, kFirma) {
+  const result = await new sql.Request(transaction)
+    .input('kFirma', sql.Int, kFirma)
+    .query(`
+      SELECT TOP 1 kFirmaHistory
+      FROM dbo.tFirmaHistory
+      WHERE kFirma = @kFirma
+      ORDER BY dGueltigAb DESC, kFirmaHistory DESC
+    `);
+  const kFirmaHistory = result.recordset[0]?.kFirmaHistory;
+  if (!kFirmaHistory) {
+    throw new Error(`No FirmaHistory found in dbo.tFirmaHistory for Firma ${kFirma}`);
+  }
+  return kFirmaHistory;
 }
 
-async function createCustomer(transaction, { customerNumber, address, defaults }) {
-  const config = getConfig();
+async function resolvePlattform(transaction) {
+  const result = await new sql.Request(transaction).query(`
+    SELECT TOP 1 nPlattform
+    FROM dbo.tPlattform
+    WHERE cName = 'JTL-POS' OR nPlattform = 7
+    ORDER BY CASE WHEN cName = 'JTL-POS' THEN 0 ELSE 1 END
+  `);
+  const nPlattform = result.recordset[0]?.nPlattform;
+  if (nPlattform == null) {
+    throw new Error('JTL-POS platform not found in dbo.tPlattform');
+  }
+  return nPlattform;
+}
+
+async function resolveDefaultKundengruppe(transaction) {
+  const result = await new sql.Request(transaction).query(`
+    SELECT TOP 1 kKundenGruppe
+    FROM dbo.tKundenGruppe
+    WHERE nStandard = 1
+    ORDER BY kKundenGruppe
+  `);
+  const kKundenGruppe = result.recordset[0]?.kKundenGruppe;
+  if (!kKundenGruppe) {
+    throw new Error('No standard customer group (nStandard = 1) found in dbo.tKundenGruppe');
+  }
+  return kKundenGruppe;
+}
+
+async function createCustomer(transaction, { customerNumber, address, defaultKundengruppe, kFirma }) {
   const a = address || {};
   const iso = (a.countryIso || 'DE').toUpperCase();
-  const kKundengruppe = Number(a.customerGroupId) || defaults.kKundengruppe;
+  const kKundengruppe = Number(a.customerGroupId) || defaultKundengruppe;
+  const kSprache = getActiveLanguageId();
 
   const result = await new sql.Request(transaction)
     .input('cKundenNr', sql.NVarChar, customerNumber)
@@ -281,12 +261,13 @@ async function createCustomer(transaction, { customerNumber, address, defaults }
     .input('cAdressZusatz', sql.NVarChar, a.addressAddition || '')
     .input('cGeburtstag', sql.NVarChar, a.birthday || '')
     .input('kKundenGruppe', sql.Int, kKundengruppe)
-    .input('kSprache', sql.Int, config.kSprache)
+    .input('kSprache', sql.Int, kSprache)
     .input('cISO', sql.NVarChar, iso)
     .input('cBundesland', sql.NVarChar, a.state || '')
     .input('cHerkunft', sql.NVarChar, 'Kasse')
     .input('cKassenKunde', sql.Char(1), 'Y')
     .input('nDebitorennr', sql.Int, Number(a.debtorNumber) || 0)
+    .input('kFirma', sql.Int, kFirma)
     .query(`
       DECLARE @returnValue INT;
       DECLARE @kunde_daten dbo.TYPE_spkundeInsert;
@@ -302,7 +283,7 @@ async function createCustomer(transaction, { customerNumber, address, defaults }
          @cStrasse, @cPLZ, @cOrt, @cLand, @cTel, @cFax, @cEMail, GETDATE(), @cMobil, @fRabatt, NULL, 'N',
          N'', N'', 0, @cAdressZusatz, @cGeburtstag, N'', 'N', NULL, @kKundenGruppe,
          0, @kSprache, @cISO, @cBundesland, @cHerkunft, @cKassenKunde, N'', 0,
-         @nDebitorennr, N'', 0, 0, 0, 0, 0,
+         @nDebitorennr, N'', 0, 0, 0, 0, @kFirma,
          NULL, 0, 0, 0);
       EXEC @returnValue = Kunde.spKundeInsert @daten = @kunde_daten;
       SELECT @returnValue AS kKunde;
@@ -327,27 +308,28 @@ function resolveAuftragCKundenNr(order) {
   return isWalkInOrder(order) ? '0' : String(order.customerNumber || '');
 }
 
-async function lookupKassenkunde(transaction, defaults) {
+async function lookupKassenkunde(transaction, defaultKundengruppe) {
   const result = await new sql.Request(transaction).query(
     "SELECT TOP 1 kKunde, kKundenGruppe FROM dbo.tKunde WHERE cKassenKunde = 'Y' ORDER BY kKunde"
   );
   if (result.recordset[0]) {
     return {
       kKunde: result.recordset[0].kKunde,
-      kKundengruppe: result.recordset[0].kKundenGruppe || defaults.kKundengruppe,
+      kKundengruppe: result.recordset[0].kKundenGruppe || defaultKundengruppe,
     };
   }
   return null;
 }
 
-async function resolveCustomer(transaction, order, defaults) {
+async function resolveCustomer(transaction, order, kFirma, defaultKundengruppe) {
   if (isWalkInOrder(order)) {
-    const kassenKunde = await lookupKassenkunde(transaction, defaults);
+    const kassenKunde = await lookupKassenkunde(transaction, defaultKundengruppe);
     if (kassenKunde) return kassenKunde;
     return createCustomer(transaction, {
       customerNumber: await nextCustomerNumber(transaction),
       address: order.billingAddress,
-      defaults,
+      defaultKundengruppe,
+      kFirma,
     });
   }
 
@@ -358,19 +340,15 @@ async function resolveCustomer(transaction, order, defaults) {
   if (result.recordset[0]) {
     return {
       kKunde: result.recordset[0].kKunde,
-      kKundengruppe: result.recordset[0].kKundenGruppe || defaults.kKundengruppe,
+      kKundengruppe: result.recordset[0].kKundenGruppe || defaultKundengruppe,
     };
   }
   return createCustomer(transaction, {
     customerNumber,
     address: order.billingAddress,
-    defaults,
+    defaultKundengruppe,
+    kFirma,
   });
-}
-
-async function nextOrderNumber(transaction, orderDate) {
-  const config = getConfig();
-  return nextNumberFromSequence(transaction, config.orderNumberSequence, orderDate);
 }
 
 async function insertOrderAddress(transaction, kAuftrag, kKunde, address, nTyp) {
@@ -609,7 +587,7 @@ function isNewPayment(payment) {
 }
 
 async function insertPayment(transaction, kAuftrag, payment, order, orderDate, zahlungsartCache) {
-  const config = getConfig();
+  const kBenutzer = getActiveUserId();
   const zahlungsart = await resolveZahlungsart(transaction, payment.paymentMethodName || order.paymentMethodName, zahlungsartCache);
   const kZahlung = await allocatePk(transaction, 'tZahlung');
 
@@ -625,7 +603,7 @@ async function insertPayment(transaction, kAuftrag, payment, order, orderDate, z
     .input('dDatum', sql.DateTime, orderDate)
     .input('fBetrag', sql.Float, toNumber(payment.amount, 0))
     .input('kBestellung', sql.Int, kAuftrag)
-    .input('kBenutzer', sql.Int, config.kBenutzer)
+    .input('kBenutzer', sql.Int, kBenutzer)
     .input('kZahlungsart', sql.Int, zahlungsart.kZahlungsart)
     .input('cExternalTransactionId', sql.NVarChar, order.externalOrderNumber || '')
     .input('fOffenerWert', sql.Float, fOffenerWert)
@@ -651,7 +629,12 @@ async function insertPayment(transaction, kAuftrag, payment, order, orderDate, z
 }
 
 async function createOrder(order) {
-  const config = getConfig();
+  assertShopConfigured();
+  const kShop = getActiveShopId();
+  const kFirma = getActiveFirmaId();
+  const kBenutzer = getActiveUserId();
+  const kSprache = getActiveLanguageId();
+
   const kPosAuftrag = Number.parseInt(order.externalId, 10);
   const externalOrderNumber = order.externalOrderNumber || '';
   if (Number.isInteger(kPosAuftrag) && kPosAuftrag > 0) {
@@ -665,23 +648,24 @@ async function createOrder(order) {
     }
   }
 
-  const defaults = await getDefaults();
   const transaction = new sql.Transaction(getPool());
   await transaction.begin(sql.ISOLATION_LEVEL.READ_COMMITTED);
 
   try {
+    const kFirmaHistory = await resolveFirmaHistory(transaction, kFirma);
+    const kPlattform = await resolvePlattform(transaction);
+    const defaultKundengruppe = await resolveDefaultKundengruppe(transaction);
+
     const zahlungsartCache = new Map();
     const orderDate = parseOrderDate(order.creationDate);
-    const { kKunde, kKundengruppe } = await resolveCustomer(transaction, order, defaults);
+    const { kKunde, kKundengruppe } = await resolveCustomer(transaction, order, kFirma, defaultKundengruppe);
     const zahlungsart = await resolveZahlungsart(transaction, order.paymentMethodName, zahlungsartCache);
     const cAuftragsNr = await nextOrderNumber(transaction, orderDate);
 
     const orderItems = [...(order.orderItems || [])];
-    const versandArt = await lookupVersandArt(transaction, order.shippingName);
-    let kVersandArt = versandArt?.kVersandArt ?? defaults.kVersandArt;
-    if (shouldInjectSelbstabholerShipping(orderItems) && versandArt) {
-      orderItems.push(syntheticShippingItem(versandArt));
-    }
+    const shippingName = order.shippingName || order.shippingMethodName || order.shippingMethod;
+    const versandArt = await resolveVersandArt(transaction, shippingName);
+    const kVersandArt = versandArt.kVersandArt;
 
     const nIstReadOnly = resolveNIstReadOnly(order);
     const nIstExterneRechnung = resolveNIstExterneRechnung(order);
@@ -689,13 +673,13 @@ async function createOrder(order) {
     const resultAuftrag = await new sql.Request(transaction)
       .input('cAuftragsNr', sql.NVarChar, cAuftragsNr)
       .input('dErstellt', sql.DateTime, orderDate)
-      .input('kBenutzer', sql.Int, config.kBenutzer)
+      .input('kBenutzer', sql.Int, kBenutzer)
       .input('kKunde', sql.Int, kKunde)
-      .input('kFirmaHistory', sql.Int, defaults.kFirmaHistory)
-      .input('kSprache', sql.Int, config.kSprache)
+      .input('kFirmaHistory', sql.Int, kFirmaHistory)
+      .input('kSprache', sql.Int, kSprache)
       .input('cWaehrung', sql.NVarChar, order.currencyIso || 'EUR')
-      .input('kPlattform', sql.Int, defaults.kPlattform)
-      .input('kShop', sql.Int, getActiveShopId() || null)
+      .input('kPlattform', sql.Int, kPlattform)
+      .input('kShop', sql.Int, kShop)
       .input('cKundenNr', sql.NVarChar, resolveAuftragCKundenNr(order))
       .input('cVersandlandISO', sql.NVarChar, (order.shippingAddress?.countryIso || 'DE').toUpperCase())
       .input('kVersandArt', sql.Int, kVersandArt)
@@ -749,7 +733,7 @@ async function createOrder(order) {
 
     logger.info(`createOrder: kAuftrag=${kAuftrag} isOrderDelivered=${isOrderDelivered(order)} deliveredItems=${JSON.stringify(deliveredItems)}`);
     if (isOrderDelivered(order)) {
-      await deliverOrder(transaction, config.kBenutzer, kAuftrag, kVersandArt, deliveredItems);
+      await deliverOrder(transaction, kBenutzer, kAuftrag, kVersandArt, deliveredItems);
     }
 
     await new sql.Request(transaction).input('kAuftrag', sql.Int, kAuftrag).query(`
