@@ -66,6 +66,35 @@ function isLogResponseEnabled() {
   return logResponseEnabled;
 }
 
+const MAX_LOG_FILE_SIZE = 10 * 1024 * 1024; // 10 MB per log file
+const MAX_BACKUP_FILES = 3; // Keep up to 3 rolled backups (.1, .2, .3)
+
+function rotateLogFile(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return;
+    const stats = fs.statSync(filePath);
+    if (stats.size < MAX_LOG_FILE_SIZE) return;
+
+    for (let i = MAX_BACKUP_FILES - 1; i >= 1; i--) {
+      const src = `${filePath}.${i}`;
+      const dst = `${filePath}.${i + 1}`;
+      if (fs.existsSync(src)) {
+        if (i === MAX_BACKUP_FILES - 1 && fs.existsSync(dst)) {
+          try { fs.unlinkSync(dst); } catch {}
+        }
+        try { fs.renameSync(src, dst); } catch {}
+      }
+    }
+    const backup1 = `${filePath}.1`;
+    if (fs.existsSync(backup1)) {
+      try { fs.unlinkSync(backup1); } catch {}
+    }
+    try { fs.renameSync(filePath, backup1); } catch {}
+  } catch {
+    // ignore rotation error
+  }
+}
+
 try {
   fs.mkdirSync(LOGS_DIR, { recursive: true });
 } catch {
@@ -79,6 +108,7 @@ let orderLogStream = null;
 function getServiceLogStream() {
   if (!serviceLogStream) {
     try {
+      rotateLogFile(SERVICE_LOG_FILE);
       serviceLogStream = fs.createWriteStream(SERVICE_LOG_FILE, { flags: 'a', encoding: 'utf-8' });
     } catch {
       // ignore
@@ -90,6 +120,7 @@ function getServiceLogStream() {
 function getRequestLogStream() {
   if (!requestLogStream) {
     try {
+      rotateLogFile(REQUEST_LOG_FILE);
       requestLogStream = fs.createWriteStream(REQUEST_LOG_FILE, { flags: 'a', encoding: 'utf-8' });
     } catch {
       // ignore
@@ -101,12 +132,29 @@ function getRequestLogStream() {
 function getOrderLogStream() {
   if (!orderLogStream) {
     try {
+      rotateLogFile(ORDER_LOG_FILE);
       orderLogStream = fs.createWriteStream(ORDER_LOG_FILE, { flags: 'a', encoding: 'utf-8' });
     } catch {
       // ignore
     }
   }
   return orderLogStream;
+}
+
+function writeLogLine(filePath, line, getStream, resetStream) {
+  try {
+    let stream = getStream();
+    if (!stream) return;
+    if (stream.bytesWritten >= MAX_LOG_FILE_SIZE) {
+      try { stream.end(); } catch {}
+      resetStream();
+      rotateLogFile(filePath);
+      stream = getStream();
+    }
+    if (stream) stream.write(line);
+  } catch {
+    // ignore
+  }
 }
 
 function pushLog(level, message, meta = null) {
@@ -125,12 +173,7 @@ function pushLog(level, message, meta = null) {
   }
 
   const line = `[${ts}] [${level}] ${entry.message}\n`;
-  try {
-    const stream = getServiceLogStream();
-    if (stream) stream.write(line);
-  } catch {
-    // ignore
-  }
+  writeLogLine(SERVICE_LOG_FILE, line, getServiceLogStream, () => { serviceLogStream = null; });
 
   // Console output
   if (level === 'ERROR') {
@@ -162,12 +205,7 @@ const logger = {
   logRequest({ remoteAddress, method, url, statusCode, durationMs, response }) {
     const ts = new Date().toISOString();
     const line = `${ts} ${remoteAddress || '127.0.0.1'} ${method} ${url} ${statusCode} ${durationMs}ms ${response || ''}\n`;
-    try {
-      const stream = getRequestLogStream();
-      if (stream) stream.write(line);
-    } catch {
-      // ignore
-    }
+    writeLogLine(REQUEST_LOG_FILE, line, getRequestLogStream, () => { requestLogStream = null; });
     const level = statusCode >= 500 ? 'ERROR' : (statusCode >= 400 ? 'WARN' : 'INFO');
     pushLog(level, `${remoteAddress || '127.0.0.1'} ${method} ${url} ${statusCode} (${durationMs}ms)`);
 
@@ -188,12 +226,7 @@ const logger = {
     const ts = new Date().toISOString();
     const externalId = order?.externalId ?? '';
     const line = `${ts} externalId=${externalId} ${JSON.stringify(order)}\n`;
-    try {
-      const stream = getOrderLogStream();
-      if (stream) stream.write(line);
-    } catch {
-      // ignore
-    }
+    writeLogLine(ORDER_LOG_FILE, line, getOrderLogStream, () => { orderLogStream = null; });
     pushLog('OK', `Order logged: externalId=${externalId}`);
     if (logBodyEnabled) {
       pushLog('INFO', `[ORDER BODY] externalId=${externalId}:\n${JSON.stringify(order, null, 2)}`);

@@ -313,6 +313,7 @@ function bindActions() {
     await window.api.startService();
     btn.classList.remove('loading');
     await refreshServiceStatus();
+    await fetchLogs(true);
   });
 
   document.getElementById('btnStopService').addEventListener('click', async () => {
@@ -321,14 +322,17 @@ function bindActions() {
     await window.api.stopService();
     btn.classList.remove('loading');
     // Wait a moment for process to exit
-    setTimeout(() => refreshServiceStatus(), 500);
+    setTimeout(async () => {
+      await refreshServiceStatus();
+      await fetchLogs(true);
+    }, 500);
   });
 
   document.getElementById('btnInstallService').addEventListener('click', async () => {
     const btn = document.getElementById('btnInstallService');
     const result = document.getElementById('serviceResult');
     btn.classList.add('loading');
-    result.textContent = 'Installing service…';
+    result.textContent = 'Installing Windows service (accept UAC prompt)…';
     result.className = 'test-result';
     const res = await window.api.installService();
     btn.classList.remove('loading');
@@ -340,13 +344,14 @@ function bindActions() {
       result.className = 'test-result error';
     }
     await refreshServiceStatus();
+    await fetchLogs(true);
   });
 
   document.getElementById('btnUninstallService').addEventListener('click', async () => {
     const btn = document.getElementById('btnUninstallService');
     const result = document.getElementById('serviceResult');
     btn.classList.add('loading');
-    result.textContent = 'Uninstalling service…';
+    result.textContent = 'Uninstalling service (accept UAC prompt)…';
     result.className = 'test-result';
     const res = await window.api.uninstallService();
     btn.classList.remove('loading');
@@ -358,6 +363,7 @@ function bindActions() {
       result.className = 'test-result error';
     }
     await refreshServiceStatus();
+    await fetchLogs(true);
   });
 
   // Ping via Named Pipe

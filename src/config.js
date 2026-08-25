@@ -15,8 +15,19 @@ const APP_NAME = 'quixpos2jtl';
  * access the exact same configuration and certificates.
  */
 function getConfigDir() {
-  const base = process.env.ProgramData || process.env.ALLUSERSPROFILE || (process.env.APPDATA || path.join(require('os').homedir(), 'AppData', 'Roaming'));
-  return path.join(base, APP_NAME);
+  if (process.env.QUIXPOS2JTL_CONFIG_DIR) {
+    return process.env.QUIXPOS2JTL_CONFIG_DIR;
+  }
+  if (process.platform === 'win32') {
+    const base = process.env.ProgramData || process.env.ALLUSERSPROFILE || (process.env.APPDATA || path.join(require('os').homedir(), 'AppData', 'Roaming'));
+    return path.join(base, APP_NAME);
+  }
+  // Linux / macOS / POSIX
+  if (typeof process.getuid === 'function' && process.getuid() === 0) {
+    return path.join('/etc', APP_NAME);
+  }
+  const configHome = process.env.XDG_CONFIG_HOME || path.join(require('os').homedir(), '.config');
+  return path.join(configHome, APP_NAME);
 }
 
 const CONFIG_DIR = getConfigDir();

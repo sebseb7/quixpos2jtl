@@ -9,6 +9,7 @@ const { fork, execSync } = require('child_process');
 const http = require('http');
 const path = require('path');
 const { loadConfig, saveConfig, PIPE_PATH, readState } = require('./config');
+const { logger } = require('./service/logger');
 
 function getRealScriptPath(relPath) {
   const fullPath = path.join(__dirname, relPath);
@@ -30,8 +31,11 @@ let statusListeners = [];
 
 function startEmbedded() {
   if (childProcess) {
+    logger.warn('[ServiceManager] Service is already running (embedded)');
     return { success: false, error: 'Service is already running (embedded)' };
   }
+
+  logger.info(`[ServiceManager] Starting embedded service: ${SERVER_SCRIPT}`);
 
   childProcess = fork(SERVER_SCRIPT, [], {
     stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
@@ -50,17 +54,21 @@ function startEmbedded() {
   });
 
   childProcess.on('exit', (code) => {
+    logger.info(`[ServiceManager] Embedded service process exited with code ${code}`);
     childProcess = null;
     notifyListeners({ type: 'stopped', code });
   });
 
+  logger.success(`[ServiceManager] Embedded service process started (PID ${childProcess.pid})`);
   return { success: true };
 }
 
 function stopEmbedded() {
   if (!childProcess) {
+    logger.warn('[ServiceManager] Service is not running');
     return { success: false, error: 'Service is not running' };
   }
+  logger.info(`[ServiceManager] Stopping embedded service (PID ${childProcess.pid})...`);
   childProcess.send('stop');
   // Force kill after 5 seconds
   const pid = childProcess.pid;
@@ -84,19 +92,23 @@ function isEmbeddedRunning() {
 function runElevated(args = []) {
   return new Promise((resolve) => {
     const nodePath = process.execPath; // path to node/electron executable
-    // Use the system node if available, otherwise fall back
-    const nodeExe = getSystemNode() || nodePath;
+    const systemNode = getSystemNode();
+    const nodeExe = systemNode || nodePath;
+    const isElectronExe = !systemNode || nodeExe.toLowerCase().includes('electron') || nodeExe.toLowerCase().includes('quixpos2jtl');
     const scriptArgs = [INSTALL_SCRIPT, ...args].map(a => `"${a}"`).join(' ');
+
+    logger.info(`[ServiceManager] Requesting UAC elevation to execute: ${path.basename(INSTALL_SCRIPT)} ${args.join(' ')}`);
+    logger.info(`[ServiceManager] Execution engine: ${nodeExe} (Electron runtime: ${isElectronExe})`);
 
     // Write a temp script that runs the install and writes output to a result file
     const fs = require('fs');
     const os = require('os');
     const resultFile = path.join(os.tmpdir(), `quixpos2jtl-svc-${Date.now()}.txt`);
-    const batContent = `@echo off\r\n"${nodeExe}" ${scriptArgs} > "${resultFile}" 2>&1\r\n`;
+    const batContent = `@echo off\r\nset "ELECTRON_RUN_AS_NODE=1"\r\n"${nodeExe}" ${scriptArgs} > "${resultFile}" 2>&1\r\n`;
     const batFile = path.join(os.tmpdir(), `quixpos2jtl-svc-${Date.now()}.cmd`);
     fs.writeFileSync(batFile, batContent, 'utf-8');
 
-    console.log(`[ServiceManager] Running elevated: ${batFile}`);
+    logger.info(`[ServiceManager] Generated elevated runner: ${batFile}`);
 
     // Use PowerShell Start-Process with -Verb RunAs for UAC elevation
     const { exec } = require('child_process');
@@ -107,35 +119,54 @@ function runElevated(args = []) {
       try { fs.unlinkSync(resultFile); } catch { /* cleanup */ }
       try { fs.unlinkSync(batFile); } catch { /* cleanup */ }
 
-      console.log(`[ServiceManager] Elevated script output: ${output.trim()}`);
+      if (output && output.trim()) {
+        const lines = output.trim().split(/\r?\n/).filter(Boolean);
+        lines.forEach((l) => {
+          if (l.includes('SERVICE_ERROR') || l.includes('Error:')) {
+            logger.error(`[Service Output] ${l}`);
+          } else if (l.includes('SERVICE_INSTALLED') || l.includes('SERVICE_STARTED') || l.includes('SERVICE_UNINSTALLED')) {
+            logger.success(`[Service Output] ${l}`);
+          } else {
+            logger.info(`[Service Output] ${l}`);
+          }
+        });
+      }
 
       if (err) {
         // User may have declined UAC
         if (err.killed || err.signal) {
+          logger.error('[ServiceManager] Elevated operation timed out (60s)');
           resolve({ success: false, error: 'Operation timed out' });
         } else {
-          resolve({ success: false, error: 'Elevated access was denied or failed. Please accept the UAC prompt.' });
+          logger.error(`[ServiceManager] Elevated access was denied or failed: ${err.message}`);
+          resolve({ success: false, error: 'Elevated access was denied or failed. Please accept the UAC elevation prompt.' });
         }
         return;
       }
 
       if (output.includes('SERVICE_INSTALLED') || output.includes('SERVICE_ALREADY_INSTALLED')) {
+        logger.success('[ServiceManager] Windows Service installed and registered successfully');
         const config = loadConfig();
         config.service = { mode: 'windows-service' };
         saveConfig(config);
         resolve({ success: true });
       } else if (output.includes('SERVICE_UNINSTALLED')) {
+        logger.success('[ServiceManager] Windows Service uninstalled successfully');
         const config = loadConfig();
         config.service = { mode: 'embedded' };
         saveConfig(config);
         resolve({ success: true });
       } else if (output.includes('SERVICE_STARTED') || output.includes('SERVICE_STOPPED')) {
+        logger.success('[ServiceManager] Windows Service state updated successfully');
         resolve({ success: true });
       } else if (output.includes('SERVICE_ERROR:')) {
         const errorMsg = output.split('SERVICE_ERROR:')[1]?.trim() || 'Unknown error';
+        logger.error(`[ServiceManager] Service operation error: ${errorMsg}`);
         resolve({ success: false, error: errorMsg });
       } else {
-        resolve({ success: false, error: output.trim() || 'Unknown error — no output from install script' });
+        const errorMsg = output.trim() || 'No output from install script';
+        logger.error(`[ServiceManager] Service operation failed: ${errorMsg}`);
+        resolve({ success: false, error: errorMsg });
       }
     });
   });
@@ -148,39 +179,43 @@ function getSystemNode() {
   try {
     const { execSync: es } = require('child_process');
     const nodePath = es('where node', { encoding: 'utf-8' }).trim().split('\n')[0].trim();
-    if (nodePath && !nodePath.includes('electron')) return nodePath;
-    return nodePath || null;
+    if (nodePath && !nodePath.toLowerCase().includes('electron')) return nodePath;
+    return null;
   } catch {
     return null;
   }
 }
 
 function installService() {
-  console.log('[ServiceManager] Installing service (elevated)…');
+  logger.info('[ServiceManager] Initiating Windows Service installation...');
   return runElevated([]);
 }
 
 function uninstallService() {
-  console.log('[ServiceManager] Uninstalling service (elevated)…');
+  logger.info('[ServiceManager] Initiating Windows Service uninstallation...');
   return runElevated(['--uninstall']);
 }
 
 async function startWindowsService() {
+  logger.info(`[ServiceManager] Starting Windows service '${SERVICE_NAME}'...`);
   try {
-    execSync(`net start "${SERVICE_NAME}"`, { stdio: 'ignore', shell: 'cmd.exe' });
+    execSync(`net start "${SERVICE_NAME}"`, { stdio: 'pipe', shell: 'cmd.exe' });
+    logger.success(`[ServiceManager] Windows Service '${SERVICE_NAME}' started via net start`);
     return { success: true };
   } catch (err) {
-    console.log('[ServiceManager] Direct net start failed, attempting elevated start…');
+    logger.warn(`[ServiceManager] Direct 'net start' failed (${err.message.trim()}), requesting elevated start...`);
     return runElevated(['--start']);
   }
 }
 
 async function stopWindowsService() {
+  logger.info(`[ServiceManager] Stopping Windows service '${SERVICE_NAME}'...`);
   try {
-    execSync(`net stop "${SERVICE_NAME}"`, { stdio: 'ignore', shell: 'cmd.exe' });
+    execSync(`net stop "${SERVICE_NAME}"`, { stdio: 'pipe', shell: 'cmd.exe' });
+    logger.success(`[ServiceManager] Windows Service '${SERVICE_NAME}' stopped via net stop`);
     return { success: true };
   } catch (err) {
-    console.log('[ServiceManager] Direct net stop failed, attempting elevated stop…');
+    logger.warn(`[ServiceManager] Direct 'net stop' failed (${err.message.trim()}), requesting elevated stop...`);
     return runElevated(['--stop']);
   }
 }

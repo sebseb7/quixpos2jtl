@@ -22,6 +22,7 @@ const { createPairingStore } = require('./jtl/pairing');
 const { readCertMetadata } = require('./jtl/cert-meta');
 const { createJtlPosServer } = require('./jtl/jtl-server');
 const healthRoute = require('./routes/health');
+const { handleCliFlags } = require('./cli-editor');
 
 let httpServer = null;
 let httpsServer = null;
@@ -283,17 +284,20 @@ async function start() {
   // --- Ensure Windows Firewall is open for configured ports ---
   updateFirewallRules(httpPort, httpsPort);
 
-  // --- Named Pipe Server ---
+  // --- Named Pipe / Unix Domain Socket Server ---
   try {
+    if (process.platform !== 'win32' && fs.existsSync(PIPE_PATH)) {
+      try { fs.unlinkSync(PIPE_PATH); } catch {}
+    }
     pipeServer = http.createServer(app);
     pipeServer.listen(PIPE_PATH, () => {
-      logger.info(`Named Pipe server listening on ${PIPE_PATH}`);
+      logger.info(`IPC listener active on ${PIPE_PATH}`);
     });
     pipeServer.on('error', (err) => {
-      logger.warn(`Named Pipe server note: ${err.message}`);
+      logger.warn(`IPC listener note: ${err.message}`);
     });
   } catch (err) {
-    logger.warn(`Named Pipe setup note: ${err.message}`);
+    logger.warn(`IPC listener setup note: ${err.message}`);
   }
 
   // --- Publish Runtime State & Listeners ---
@@ -410,7 +414,14 @@ process.on('SIGTERM', async () => { await stop(); process.exit(0); });
 process.on('SIGINT', async () => { await stop(); process.exit(0); });
 
 // Auto-start when executed directly
-start().catch((err) => {
-  console.error('Fatal error starting service:', err);
-  process.exit(1);
-});
+(async () => {
+  try {
+    const shouldStart = await handleCliFlags();
+    if (shouldStart) {
+      await start();
+    }
+  } catch (err) {
+    console.error('Fatal error starting service:', err);
+    process.exit(1);
+  }
+})();

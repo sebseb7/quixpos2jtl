@@ -191,6 +191,75 @@ All runtime configuration and credentials are saved in `%ProgramData%` to allow 
 
 ---
 
+## CLI Settings Editor & Configuration
+
+The service can be fully configured via the command line or an interactive terminal editor:
+
+### Interactive Settings Editor
+Launch the interactive terminal menu to edit Database, Shop, Network, Certificates, and POS Pairing:
+```bash
+# Open interactive CLI editor
+npm run service:settings
+# Or:
+node src/service/server.js --settings
+# Or with CLI batch script:
+QuixPOS2JTL-CLI.cmd --settings
+```
+
+### Direct CLI Flags
+Configure settings directly or run utility operations:
+```bash
+# Database settings
+node src/service/server.js --db-server 192.168.1.50 --db-port 1433 --db-name eazybusiness --db-user sa --db-pass secret
+
+# Shop settings
+node src/service/server.js --mandant-id 1 --taxzone 1 --warehouse 1 --language 1
+
+# Network & Ports
+node src/service/server.js --http-port 8087 --https-port 4447
+
+# Pairing & Certificate
+node src/service/server.js --newpin
+node src/service/server.js --pin 123456
+node src/service/server.js --list-devices
+node src/service/server.js --gen-cert
+node src/service/server.js --test-db
+node src/service/server.js --show-config
+```
+
+---
+
+## Linux CLI & Systemd Service Packaging
+
+QuixPOS2JTL can be packaged as a standalone Linux x64 executable and systemd daemon:
+
+### Build for Linux
+```bash
+npm run build:cli:linux
+```
+
+This compiles:
+- `dist/quixpos2jtl-cli-linux/quixpos2jtl` (standalone ELF binary, no Node.js runtime required)
+- `dist/quixpos2jtl-cli-linux/systemd/quixpos2jtl.service` (systemd unit template)
+- `dist/quixpos2jtl-cli-linux/install.sh` and `uninstall.sh`
+- `dist/quixpos2jtl-cli-linux-x64.tar.gz` (distribution archive)
+
+### Install on Linux Server (Ubuntu, Debian, RHEL, CentOS, Alpine, etc.)
+```bash
+# Extract and install
+tar -xzf quixpos2jtl-cli-linux-x64.tar.gz
+cd quixpos2jtl-cli-linux
+sudo ./install.sh
+
+# Interactive settings configuration
+quixpos2jtl --settings
+
+# Check service status
+sudo systemctl status quixpos2jtl
+```
+
+---
+
 ## Windows Service Management
 
 ### From the Settings UI
