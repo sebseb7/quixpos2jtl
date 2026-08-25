@@ -154,6 +154,7 @@ async function start() {
       logger.success('Database configuration reloaded via API');
       res.json({ status: 'ok', message: 'Database configuration reloaded' });
     } catch (err) {
+      db.startReconnectLoop(10000);
       logger.error(`Database reload failed: ${err.message}`);
       res.status(500).json({ status: 'error', error: err.message });
     }
@@ -165,6 +166,7 @@ async function start() {
     res.json({
       service: 'QuixPOS2JTL',
       status: 'running',
+      database: db.isConnected() ? 'connected' : 'connecting',
       pid: process.pid,
       uptime: process.uptime(),
       httpPort: config.network?.httpPort || 8087,
@@ -251,6 +253,7 @@ async function start() {
       status: 'running',
       jtlPosSync: 'active',
       endpoints: [
+        '/health',
         '/api/health',
         '/api/status',
         '/api/logs',
@@ -293,21 +296,35 @@ async function start() {
     logger.warn(`Named Pipe setup note: ${err.message}`);
   }
 
-  // --- Publish Runtime State ---
-  writeState({
-    pid: process.pid,
-    status: 'running',
-    startedAt: new Date().toISOString(),
-    httpPort,
-    httpsPort,
-    pipe: PIPE_PATH,
+  // --- Publish Runtime State & Listeners ---
+  const runtimeStartedAt = new Date().toISOString();
+  function updateRuntimeState(dbStatus = 'connecting') {
+    writeState({
+      pid: process.pid,
+      status: 'running',
+      database: dbStatus,
+      startedAt: runtimeStartedAt,
+      httpPort,
+      httpsPort,
+      pipe: PIPE_PATH,
+    });
+    if (process.send) {
+      process.send({ type: 'db-status', database: dbStatus, httpPort, httpsPort, pipe: PIPE_PATH });
+    }
+  }
+
+  db.setConnectionStateListener((state) => {
+    updateRuntimeState(state);
   });
+
+  updateRuntimeState('connecting');
 
   // --- Connect Database ---
   try {
     await db.connect();
   } catch (err) {
     logger.warn(`Initial database connection note: ${err.message}`);
+    db.startReconnectLoop(10000);
   }
 
   // --- Watch Config File For Live Reloading ---
@@ -360,6 +377,7 @@ function setupConfigFileWatcher() {
             await db.reloadIfChanged();
           } catch (err) {
             logger.warn(`Database reconnect on config change: ${err.message}`);
+            db.startReconnectLoop(10000);
           }
         }, 300);
       }

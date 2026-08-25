@@ -38,6 +38,8 @@ function setupTabs() {
         refreshPairingState();
       } else if (tab.dataset.tab === 'logs') {
         fetchLogs();
+      } else if (tab.dataset.tab === 'service') {
+        refreshServiceStatus();
       }
     });
   });
@@ -479,14 +481,15 @@ async function refreshServiceStatus() {
   // Check live pipe connectivity asynchronously
   if (status.running && pipeStatusEl) {
     window.api.pingPipe().then((res) => {
-      if (res.success) {
-        pipeStatusEl.textContent = `Active (PID ${res.info?.pid || status.runtime?.pid || 'running'})`;
+      if (res && res.success) {
+        const transportInfo = res.transport && res.transport !== 'pipe' ? ` (via ${res.transport})` : '';
+        pipeStatusEl.textContent = `Active (PID ${res.info?.pid || status.runtime?.pid || 'running'})${transportInfo}`;
         pipeStatusEl.style.color = 'var(--success)';
       } else {
-        pipeStatusEl.textContent = 'Waiting for pipe listener…';
-        pipeStatusEl.style.color = 'var(--text-secondary)';
+        pipeStatusEl.textContent = res?.error ? `Offline (${res.error})` : 'Offline';
+        pipeStatusEl.style.color = 'var(--danger)';
       }
-    }).catch(() => {
+    }).catch((err) => {
       pipeStatusEl.textContent = 'Disconnected';
       pipeStatusEl.style.color = 'var(--danger)';
     });

@@ -184,7 +184,7 @@ All runtime configuration and credentials are saved in `%ProgramData%` to allow 
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/health` | `GET` | Live SQL Server connectivity health check |
+| `/health`, `/api/health` | `GET` | Live SQL Server connectivity health check |
 | `/api/status` | `GET` | Runtime service status, PID, uptime, ports, and pairing PIN |
 | `/api/logs` | `GET`, `DELETE` | Fetch recent memory logs or clear logs |
 | `/api/config/reload`| `POST` | Reload database connection pool and configuration from disk |

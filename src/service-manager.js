@@ -214,6 +214,7 @@ function getWindowsServiceStatus() {
  */
 function queryPipe(endpoint = '/api/status', method = 'GET', body = null, timeout = 2000) {
   return new Promise((resolve, reject) => {
+    let settled = false;
     const postData = body ? (typeof body === 'string' ? body : JSON.stringify(body)) : null;
     const headers = {};
     if (postData) {
@@ -221,29 +222,8 @@ function queryPipe(endpoint = '/api/status', method = 'GET', body = null, timeou
       headers['Content-Length'] = Buffer.byteLength(postData);
     }
 
-    // Try Named Pipe first
-    const pipeReq = http.request(
-      {
-        socketPath: PIPE_PATH,
-        path: endpoint,
-        method,
-        headers,
-        timeout: 1000,
-      },
-      (res) => {
-        let data = '';
-        res.on('data', (chunk) => (data += chunk));
-        res.on('end', () => {
-          try {
-            resolve({ statusCode: res.statusCode, data: JSON.parse(data), transport: 'pipe' });
-          } catch {
-            resolve({ statusCode: res.statusCode, data, transport: 'pipe' });
-          }
-        });
-      }
-    );
-
-    pipeReq.on('error', () => {
+    function doFallback() {
+      if (settled) return;
       // Fallback to reading the active HTTP port from state.json
       const state = readState();
       const cfg = loadConfig();
@@ -262,6 +242,8 @@ function queryPipe(endpoint = '/api/status', method = 'GET', body = null, timeou
           let data = '';
           res.on('data', (chunk) => (data += chunk));
           res.on('end', () => {
+            if (settled) return;
+            settled = true;
             try {
               resolve({ statusCode: res.statusCode, data: JSON.parse(data), transport: `http:${port}` });
             } catch {
@@ -271,25 +253,64 @@ function queryPipe(endpoint = '/api/status', method = 'GET', body = null, timeou
         }
       );
 
-      httpReq.on('error', (err) => reject(err));
+      httpReq.on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      });
       httpReq.on('timeout', () => {
-        httpReq.destroy();
+        try { httpReq.destroy(); } catch { /* ignore */ }
+        if (settled) return;
+        settled = true;
         reject(new Error('Service query timed out'));
       });
 
       if (postData) httpReq.write(postData);
       httpReq.end();
-    });
-
-    pipeReq.on('timeout', () => {
-      pipeReq.destroy();
-      // Trigger error handler for fallback
-    });
-
-    if (postData) {
-      pipeReq.write(postData);
     }
-    pipeReq.end();
+
+    // Try Named Pipe first
+    let pipeReq = null;
+    try {
+      pipeReq = http.request(
+        {
+          socketPath: PIPE_PATH,
+          path: endpoint,
+          method,
+          headers,
+          timeout: 1000,
+        },
+        (res) => {
+          let data = '';
+          res.on('data', (chunk) => (data += chunk));
+          res.on('end', () => {
+            if (settled) return;
+            settled = true;
+            try {
+              resolve({ statusCode: res.statusCode, data: JSON.parse(data), transport: 'pipe' });
+            } catch {
+              resolve({ statusCode: res.statusCode, data, transport: 'pipe' });
+            }
+          });
+        }
+      );
+
+      pipeReq.on('error', () => {
+        doFallback();
+      });
+
+      pipeReq.on('timeout', () => {
+        try { pipeReq.destroy(); } catch { /* ignore */ }
+        doFallback();
+      });
+
+      if (postData) {
+        pipeReq.write(postData);
+      }
+      pipeReq.end();
+    } catch {
+      doFallback();
+    }
   });
 }
 

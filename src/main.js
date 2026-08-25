@@ -48,6 +48,16 @@ app.whenReady().then(() => {
   } else {
     updateTrayMenu();
   }
+
+  // Subscribe to service lifecycle & DB connection state changes
+  svcManager.onStatusChange(() => {
+    updateTrayMenu();
+  });
+
+  // Periodic tray state refresh to detect runtime database reconnects / service changes
+  setInterval(() => {
+    updateTrayMenu();
+  }, 2000);
 });
 
 app.on('second-instance', () => {
@@ -65,20 +75,27 @@ function createTray() {
 }
 
 // ─── Tray Icons ──────────────────────────────────────────────
-// Green square  = embedded mode running
-// Red square    = not running, no service installed
-// Red ball      = service installed but stopped
-// Green ball    = service running
+// Green square   = embedded mode running, DB connected
+// Yellow square  = embedded mode running, DB connecting/retrying
+// Red square     = not running, no service installed
+// Green ball     = service running, DB connected
+// Yellow ball    = service running, DB connecting/retrying
+// Red ball       = service installed but stopped
 
 function getStatusIcon() {
   const status = svcManager.getStatus();
-  let icon;
-  if (status.mode === 'embedded') {
-    icon = status.running ? createShapeIcon('square', 'green') : createShapeIcon('square', 'red');
-  } else {
-    icon = status.running ? createShapeIcon('ball', 'green') : createShapeIcon('ball', 'red');
+  let color = 'red';
+  if (status.running) {
+    const dbStatus = status.runtime?.database;
+    if (dbStatus === 'connected') {
+      color = 'green';
+    } else {
+      color = 'yellow';
+    }
   }
-  return icon.resize({ width: 16, height: 16 });
+
+  const shape = status.mode === 'embedded' ? 'square' : 'ball';
+  return createShapeIcon(shape, color).resize({ width: 16, height: 16 });
 }
 
 function createShapeIcon(shape, color) {
@@ -86,6 +103,7 @@ function createShapeIcon(shape, color) {
   const canvas = Buffer.alloc(size * size * 4);
   const colors = {
     green: [0x00, 0xC8, 0x64],
+    yellow: [0xF5, 0x9E, 0x0B],
     red: [0xE0, 0x20, 0x20],
   };
   const [r, g, b] = colors[color] || colors.green;
@@ -125,13 +143,31 @@ function updateTrayMenu() {
   const status = svcManager.getStatus();
   const isRunning = status.running;
   const isServiceMode = status.mode === 'windows-service';
+  const dbStatus = status.runtime?.database || (isRunning ? 'connecting' : 'disconnected');
+
+  let statusLabel = '○ Stopped';
+  if (isRunning) {
+    if (dbStatus === 'connected') {
+      statusLabel = '● Running (DB Connected)';
+    } else {
+      statusLabel = '◐ Running (Connecting DB…)';
+    }
+  }
+
+  // Update Tooltip
+  if (tray && !tray.isDestroyed()) {
+    const tip = isRunning
+      ? `QuixPOS2JTL — ${dbStatus === 'connected' ? 'Connected' : 'Connecting to Database…'}`
+      : 'QuixPOS2JTL — Stopped';
+    tray.setToolTip(tip);
+  }
 
   // Keep the icon in sync whenever the menu (and thus state) refreshes
   updateTrayIcon();
 
   const menuItems = [
     {
-      label: `QuixPOS2JTL — ${isRunning ? '● Running' : '○ Stopped'}`,
+      label: `QuixPOS2JTL — ${statusLabel}`,
       enabled: false,
     },
     {
@@ -416,7 +452,7 @@ function registerIpcHandlers() {
   ipcMain.handle('ping-pipe', async () => {
     try {
       const res = await svcManager.queryPipe('/api/status', 'GET', null, 1500);
-      return { success: true, info: res.data };
+      return { success: true, info: res.data, transport: res.transport };
     } catch (err) {
       return { success: false, error: err.message };
     }

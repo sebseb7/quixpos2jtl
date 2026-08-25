@@ -1,13 +1,13 @@
 /**
  * Health-check route.
- * GET /api/health — tests the MSSQL connection by querying GETDATE().
+ * GET /health, GET /api/health — tests the MSSQL connection by querying GETDATE().
  */
 const { Router } = require('express');
 const db = require('../db');
 
 const router = Router();
 
-router.get('/api/health', async (_req, res) => {
+const handleHealth = async (_req, res) => {
   try {
     const serverTime = await db.healthCheck();
     res.json({
@@ -22,6 +22,9 @@ router.get('/api/health', async (_req, res) => {
       error: err.message,
     });
   }
-});
+};
+
+router.get('/health', handleHealth);
+router.get('/api/health', handleHealth);
 
 module.exports = router;

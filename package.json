@@ -55,13 +55,20 @@
       ],
       "icon": "assets/icon.png"
     },
+    "extraFiles": [
+      {
+        "from": "assets/QuixPOS2JTL-CLI.cmd",
+        "to": "QuixPOS2JTL-CLI.cmd"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "QuixPOS2JTL",
-      "uninstallDisplayName": "QuixPOS2JTL"
+      "uninstallDisplayName": "QuixPOS2JTL",
+      "include": "build/installer.nsh"
     }
   },
   "allowScripts": {

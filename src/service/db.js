@@ -9,6 +9,45 @@ const { logger } = require('./logger');
 
 let pool = null;
 let currentDbConfigJson = '';
+let reconnectTimer = null;
+let onConnectionStateChange = null;
+
+function setConnectionStateListener(listener) {
+  onConnectionStateChange = listener;
+}
+
+function notifyConnectionState(state) {
+  if (typeof onConnectionStateChange === 'function') {
+    try {
+      onConnectionStateChange(state);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function clearReconnectTimer() {
+  if (reconnectTimer) {
+    clearInterval(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
+
+function startReconnectLoop(intervalMs = 10000) {
+  notifyConnectionState('connecting');
+  if (reconnectTimer) return; // already active
+  reconnectTimer = setInterval(async () => {
+    try {
+      await connect();
+    } catch (err) {
+      notifyConnectionState('connecting');
+      logger.warn(`Database reconnect retry failed: ${err.message}`);
+    }
+  }, intervalMs);
+  if (reconnectTimer.unref) {
+    reconnectTimer.unref();
+  }
+}
 
 /**
  * Build a mssql config object from our app config.
@@ -45,19 +84,35 @@ async function connect(dbCfgOverride) {
     throw new Error('Database server or database name is not configured.');
   }
 
-  const sqlConfig = buildSqlConfig(config);
-  pool = await sql.connect(sqlConfig);
-  logger.success(`MSSQL connected: ${config.server}:${config.port || 1433}/${config.database}`);
-
-  // Auto-initialize active shop ID
   try {
-    const shopId = await fetchActiveShop(pool);
-    logger.info(`Active JTL shop ID: ${shopId}`);
-  } catch (err) {
-    logger.warn(`Could not fetch active shop ID: ${err.message}`);
-  }
+    const sqlConfig = buildSqlConfig(config);
+    const newPool = await sql.connect(sqlConfig);
 
-  return pool;
+    newPool.on('error', (err) => {
+      logger.warn(`Database connection pool error: ${err.message}`);
+      pool = null;
+      notifyConnectionState('connecting');
+      startReconnectLoop(10000);
+    });
+
+    pool = newPool;
+    clearReconnectTimer();
+    notifyConnectionState('connected');
+    logger.success(`MSSQL connected: ${config.server}:${config.port || 1433}/${config.database}`);
+
+    // Auto-initialize active shop ID
+    try {
+      const shopId = await fetchActiveShop(pool);
+      logger.info(`Active JTL shop ID: ${shopId}`);
+    } catch (err) {
+      logger.warn(`Could not fetch active shop ID: ${err.message}`);
+    }
+
+    return pool;
+  } catch (err) {
+    notifyConnectionState('connecting');
+    throw err;
+  }
 }
 
 /**
@@ -76,10 +131,19 @@ async function reloadIfChanged() {
  * Close the connection pool.
  */
 async function disconnect() {
+  clearReconnectTimer();
+  notifyConnectionState('disconnected');
   if (pool) {
     try { await pool.close(); } catch { /* ignore */ }
     pool = null;
   }
+}
+
+/**
+ * Check if pool is currently connected.
+ */
+function isConnected() {
+  return !!(pool && pool.connected);
 }
 
 /**
@@ -100,8 +164,17 @@ async function healthCheck() {
   if (!pool) {
     await connect();
   }
-  const result = await pool.request().query('SELECT GETDATE() AS currentDate');
-  return result.recordset[0].currentDate;
+  try {
+    const result = await pool.request().query('SELECT GETDATE() AS currentDate');
+    return result.recordset[0].currentDate;
+  } catch (err) {
+    if (pool) {
+      try { await pool.close(); } catch { /* ignore */ }
+      pool = null;
+    }
+    startReconnectLoop(10000);
+    throw err;
+  }
 }
 
 /**
@@ -120,7 +193,11 @@ module.exports = {
   connect,
   reloadIfChanged,
   disconnect,
+  isConnected,
   getPool,
   healthCheck,
   pingDb,
+  startReconnectLoop,
+  clearReconnectTimer,
+  setConnectionStateListener,
 };
