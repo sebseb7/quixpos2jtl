@@ -150,13 +150,13 @@ function runElevated(args = []) {
         config.service = { mode: 'windows-service' };
         saveConfig(config);
         resolve({ success: true });
-      } else if (output.includes('SERVICE_UNINSTALLED')) {
+      } else if (output.includes('SERVICE_UNINSTALLED') || output.includes('alreadyuninstalled') || output.includes('Uninstall was skipped')) {
         logger.success('[ServiceManager] Windows Service uninstalled successfully');
         const config = loadConfig();
         config.service = { mode: 'embedded' };
         saveConfig(config);
         resolve({ success: true });
-      } else if (output.includes('SERVICE_STARTED') || output.includes('SERVICE_STOPPED')) {
+      } else if (output.includes('SERVICE_STARTED') || output.includes('SERVICE_STOPPED') || output.includes('alreadystopped')) {
         logger.success('[ServiceManager] Windows Service state updated successfully');
         resolve({ success: true });
       } else if (output.includes('SERVICE_ERROR:')) {

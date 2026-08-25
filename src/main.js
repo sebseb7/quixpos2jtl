@@ -365,12 +365,13 @@ function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('generate-cert', async () => {
+  ipcMain.handle('generate-cert', async (_e, options) => {
     try {
-      logger.info('Generating self-signed TLS certificate…');
-      const result = await cert.generateCert();
-      logger.success('TLS certificate generated successfully');
-      return { success: true, publicKey: result.cert };
+      const cn = (typeof options === 'string' ? options : options?.commonName) || 'localhost';
+      logger.info(`Generating self-signed TLS certificate for ${cn}…`);
+      const result = await cert.generateCert(options);
+      logger.success(`TLS certificate generated successfully for ${cn}`);
+      return { success: true, publicKey: result.cert, commonName: result.commonName, altNames: result.altNames };
     } catch (err) {
       logger.error(`Failed to generate TLS certificate: ${err.message}`);
       return { success: false, error: err.message };
@@ -378,8 +379,11 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('get-cert-info', () => {
-    const pem = cert.getPublicKeyPem();
-    return { exists: cert.certExists(), publicKey: pem };
+    return cert.getCertInfo();
+  });
+
+  ipcMain.handle('get-local-ips', () => {
+    return cert.getLocalIpAddresses();
   });
 
   ipcMain.handle('export-cert', async (_e, destPath) => {

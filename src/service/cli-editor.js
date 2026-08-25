@@ -481,6 +481,13 @@ async function editCertificateSettings(rl) {
     console.log(`\n${C.cyan}${C.bright}=== TLS Certificate Management ===${C.reset}`);
     console.log(`Status         : ${exists ? `${C.green}✓ Certificate Available${C.reset}` : `${C.yellow}⚠ No certificate generated${C.reset}`}`);
     if (meta) {
+      console.log(`Common Name    : ${C.green}${meta.commonName || 'localhost'}${C.reset}`);
+      if (meta.subjectAltNames) {
+        console.log(`Alt Names (SAN): ${C.green}${meta.subjectAltNames}${C.reset}`);
+      }
+      if (meta.validTo) {
+        console.log(`Valid Until    : ${C.green}${meta.validTo}${C.reset}`);
+      }
       console.log(`Fingerprint    : ${C.green}${meta.serverFingerprint || 'N/A'}${C.reset}`);
       console.log(`Serial Number  : ${C.green}${meta.certificateSerialNumber || 'N/A'}${C.reset}`);
     }
@@ -494,14 +501,35 @@ async function editCertificateSettings(rl) {
 
     switch (choice) {
       case '1': {
-        const confirm = await askQuestion(rl, 'Generate new certificate? This will overwrite the current one (y/n)', 'n');
-        if (confirm.toLowerCase().startsWith('y')) {
-          console.log(`${C.gray}Generating 2048-bit RSA self-signed certificate...${C.reset}`);
-          const res = await cert.generateCert();
-          const newMeta = readCertMetadata(res.cert);
-          console.log(`${C.green}✓ Certificate generated successfully!${C.reset}`);
-          console.log(`Fingerprint: ${newMeta.serverFingerprint}`);
+        const netInfo = cert.getLocalIpAddresses();
+        const defaultCn = netInfo.ips[0] || netInfo.hostname || 'localhost';
+
+        console.log(`\n${C.gray}Detected System Network Info:${C.reset}`);
+        console.log(`  Hostname : ${C.cyan}${netInfo.hostname}${C.reset}`);
+        console.log(`  Local IPs: ${C.cyan}${netInfo.ips.join(', ') || '127.0.0.1'}${C.reset}`);
+
+        const commonName = await askQuestion(rl, `Enter Common Name / Hostname / IP for certificate`, defaultCn);
+        const altNamesInput = await askQuestion(rl, `Enter additional Subject Alternative Names (optional, comma-separated)`, '');
+
+        if (exists) {
+          const confirm = await askQuestion(rl, 'Overwrite current certificate? (y/n)', 'n');
+          if (!confirm.toLowerCase().startsWith('y')) {
+            console.log(`${C.yellow}Certificate generation cancelled.${C.reset}`);
+            break;
+          }
         }
+
+        console.log(`${C.gray}Generating 2048-bit RSA self-signed certificate for "${commonName}"...${C.reset}`);
+        const res = await cert.generateCert({
+          commonName: commonName.trim() || defaultCn,
+          altNames: altNamesInput.trim(),
+        });
+        const newMeta = readCertMetadata(res.cert);
+        console.log(`${C.green}✓ Certificate generated successfully!${C.reset}`);
+        console.log(`Common Name : ${newMeta.commonName || commonName}`);
+        console.log(`Alt Names   : ${newMeta.subjectAltNames}`);
+        console.log(`Valid Until : ${newMeta.validTo}`);
+        console.log(`Fingerprint : ${newMeta.serverFingerprint}`);
         break;
       }
       case '2': {
@@ -788,10 +816,15 @@ async function handleCliFlags() {
 
   // Certificate direct commands
   if (args.includes('--gen-cert')) {
-    console.log('Generating fresh TLS certificate...');
-    const result = await cert.generateCert();
+    const cn = getArgVal('--cn') || getArgVal('--cert-cn') || getArgVal('--common-name') || 'localhost';
+    const altNames = getArgVal('--alt-names') || getArgVal('--san') || '';
+    console.log(`Generating fresh TLS certificate for Common Name: "${cn}"...`);
+    const result = await cert.generateCert({ commonName: cn, altNames });
     const meta = readCertMetadata(result.cert);
-    console.log(`${C.green}✓ Generated certificate with fingerprint: ${meta.serverFingerprint}${C.reset}`);
+    console.log(`${C.green}✓ Generated certificate for CN: ${meta.commonName || cn}${C.reset}`);
+    if (meta.subjectAltNames) console.log(`Alt Names (SAN): ${meta.subjectAltNames}`);
+    if (meta.validTo) console.log(`Valid Until    : ${meta.validTo}`);
+    console.log(`Fingerprint    : ${meta.serverFingerprint}`);
   }
 
   const exportCertPath = getArgVal('--export-cert');
@@ -811,8 +844,11 @@ async function handleCliFlags() {
       console.log('No certificate found.');
     } else {
       const meta = readCertMetadata(pem);
-      console.log(`Fingerprint: ${meta.serverFingerprint}`);
-      console.log(`Serial: ${meta.certificateSerialNumber}\n`);
+      console.log(`Common Name    : ${meta.commonName || 'N/A'}`);
+      if (meta.subjectAltNames) console.log(`Alt Names (SAN): ${meta.subjectAltNames}`);
+      if (meta.validTo) console.log(`Valid Until    : ${meta.validTo}`);
+      console.log(`Fingerprint    : ${meta.serverFingerprint}`);
+      console.log(`Serial         : ${meta.certificateSerialNumber}\n`);
       console.log(pem);
     }
   }
@@ -896,7 +932,9 @@ ${C.yellow}Pairing & Certificate Commands:${C.reset}
   --revoke-pin                Revoke active PIN
   --list-devices              List all paired POS registers
   --remove-device <token>     Remove a paired register by token
-  --gen-cert                  Generate fresh TLS certificate
+  --gen-cert                  Generate fresh TLS certificate (use --cn / --alt-names)
+  --cn <host/ip>              Common Name for generated cert (e.g. 192.168.1.100)
+  --alt-names <names>         Additional SANs (comma-separated, e.g. "pos.lan,10.0.0.5")
   --export-cert <file>        Export public key .crt to file
   --show-cert                 Print certificate details & PEM
   --test-db                   Test MSSQL connection and exit

@@ -11,6 +11,7 @@ async function init() {
   setupLogs();
   await loadConfig();
   await refreshCertStatus();
+  await setupCertSuggestions();
   await refreshPairingState();
   await refreshServiceStatus();
   bindActions();
@@ -40,6 +41,8 @@ function setupTabs() {
         fetchLogs();
       } else if (tab.dataset.tab === 'service') {
         refreshServiceStatus();
+      } else if (tab.dataset.tab === 'certificate') {
+        refreshCertStatus();
       }
     });
   });
@@ -267,9 +270,16 @@ function bindActions() {
   // Generate Certificate
   document.getElementById('btnGenerateCert').addEventListener('click', async () => {
     const btn = document.getElementById('btnGenerateCert');
+    const cnInput = document.getElementById('certCommonName');
+    const altInput = document.getElementById('certAltNames');
+
+    const commonName = cnInput ? cnInput.value.trim() : '';
+    const altNames = altInput ? altInput.value.trim() : '';
+
     btn.classList.add('loading');
-    const res = await window.api.generateCert();
+    const res = await window.api.generateCert({ commonName, altNames });
     btn.classList.remove('loading');
+
     if (res && res.success) {
       await refreshCertStatus();
     } else {
@@ -439,26 +449,97 @@ async function refreshDatabaseList() {
   }
 }
 
-// ─── Certificate Status ────────────────────────────────────────
+// ─── Certificate Status & Suggestions ──────────────────────────
+
+async function setupCertSuggestions() {
+  const container = document.getElementById('certSuggestionChips');
+  if (!container) return;
+
+  try {
+    const netInfo = await window.api.getLocalIps();
+    container.innerHTML = '';
+
+    const suggestions = [];
+    if (netInfo.ips && netInfo.ips.length > 0) {
+      netInfo.ips.forEach((ip) => {
+        suggestions.push({ label: ip, value: ip });
+      });
+    }
+    if (netInfo.hostname && netInfo.hostname !== 'localhost') {
+      suggestions.push({ label: netInfo.hostname, value: netInfo.hostname });
+    }
+    suggestions.push({ label: 'localhost', value: 'localhost' });
+
+    suggestions.forEach((item) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'suggestion-chip';
+      chip.textContent = item.label;
+      chip.addEventListener('click', () => {
+        const cnInput = document.getElementById('certCommonName');
+        if (cnInput) {
+          cnInput.value = item.value;
+          cnInput.focus();
+        }
+        document.querySelectorAll('.suggestion-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+      });
+      container.appendChild(chip);
+    });
+
+    // Default common name input if blank
+    const cnInput = document.getElementById('certCommonName');
+    if (cnInput && !cnInput.value) {
+      cnInput.value = suggestions[0]?.value || 'localhost';
+    }
+  } catch (err) {
+    console.error('Failed to load local IP suggestions:', err);
+  }
+}
 
 async function refreshCertStatus() {
   const info = await window.api.getCertInfo();
   const statusEl = document.getElementById('certStatus');
+  const badgeEl = document.getElementById('certBadge');
+  const metaGrid = document.getElementById('certMetaGrid');
   const pemWrapper = document.getElementById('certPemWrapper');
   const pemTextarea = document.getElementById('certPem');
   const exportBtn = document.getElementById('btnExportCert');
 
   if (info.exists) {
     statusEl.className = 'cert-status exists';
-    statusEl.innerHTML = '<span class="cert-icon">🔒</span><span>Certificate is generated and ready</span>';
-    pemWrapper.classList.remove('hidden');
-    pemTextarea.value = info.publicKey || '';
-    exportBtn.disabled = false;
+    statusEl.innerHTML = '<span class="cert-icon">🔒</span><span>TLS Certificate is active and ready</span>';
+
+    if (badgeEl) {
+      badgeEl.textContent = 'Active';
+      badgeEl.className = 'badge badge-success';
+      badgeEl.classList.remove('hidden');
+    }
+
+    if (info.meta && metaGrid) {
+      document.getElementById('certMetaCn').textContent = info.meta.commonName || 'localhost';
+      document.getElementById('certMetaSan').textContent = info.meta.subjectAltNames || 'None';
+      document.getElementById('certMetaValidTo').textContent = info.meta.validTo || 'N/A';
+      document.getElementById('certMetaFingerprint').textContent = info.meta.serverFingerprint || info.meta.certificateFingerprint || 'N/A';
+      metaGrid.classList.remove('hidden');
+
+      const cnInput = document.getElementById('certCommonName');
+      if (cnInput && !cnInput.value) {
+        cnInput.value = info.meta.commonName || '';
+      }
+    }
+
+    if (pemWrapper) pemWrapper.classList.remove('hidden');
+    if (pemTextarea) pemTextarea.value = info.publicKey || '';
+    if (exportBtn) exportBtn.disabled = false;
   } else {
     statusEl.className = 'cert-status missing';
     statusEl.innerHTML = '<span class="cert-icon">⚠️</span><span>No certificate found — generate one for HTTPS</span>';
-    pemWrapper.classList.add('hidden');
-    exportBtn.disabled = true;
+
+    if (badgeEl) badgeEl.classList.add('hidden');
+    if (metaGrid) metaGrid.classList.add('hidden');
+    if (pemWrapper) pemWrapper.classList.add('hidden');
+    if (exportBtn) exportBtn.disabled = true;
   }
 }
 

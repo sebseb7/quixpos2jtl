@@ -202,25 +202,79 @@
 
       <!-- Certificate Tab -->
       <section class="panel hidden" id="tab-certificate">
+        <!-- Current Certificate Status & Details -->
         <div class="card">
-          <h2>TLS Certificate</h2>
+          <div class="panel-header-inline">
+            <h2>TLS Certificate Status</h2>
+            <span class="badge badge-success hidden" id="certBadge">Ready</span>
+          </div>
+
           <div class="cert-status" id="certStatus">
             <span class="cert-icon">🔒</span>
             <span>Checking certificate status…</span>
           </div>
-          <div class="card-actions">
+
+          <div class="cert-meta-grid hidden" id="certMetaGrid">
+            <div class="meta-item">
+              <span class="meta-label">Common Name (CN)</span>
+              <span class="meta-value" id="certMetaCn">—</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Subject Alt Names (SAN)</span>
+              <span class="meta-value" id="certMetaSan">—</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Valid Until</span>
+              <span class="meta-value" id="certMetaValidTo">—</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">SHA-1 Fingerprint</span>
+              <span class="meta-value meta-mono" id="certMetaFingerprint">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Generate Certificate Section -->
+        <div class="card" style="margin-top: 16px;">
+          <h2>Generate Certificate</h2>
+          <p class="hint-text">Specify the Common Name (IP address or hostname) that JTL-POS devices will use to connect to this server.</p>
+
+          <div class="form-group">
+            <label for="certCommonName">Common Name (IP or Hostname)</label>
+            <input type="text" id="certCommonName" placeholder="e.g. 192.168.1.100, pos-server, or localhost" autocomplete="off">
+            <div class="ip-suggestions" id="certIpSuggestions">
+              <span class="suggestion-label">Suggestions:</span>
+              <div class="suggestion-chips" id="certSuggestionChips">
+                <!-- dynamically loaded chips -->
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px;">
+            <label for="certAltNames">Additional Alt Names / SANs <span class="label-hint">(Optional, comma-separated)</span></label>
+            <input type="text" id="certAltNames" placeholder="e.g. pos-tablet.local, 10.0.0.50" autocomplete="off">
+            <p class="field-hint">Note: <code>localhost</code> and <code>127.0.0.1</code> are always included automatically.</p>
+          </div>
+
+          <div class="card-actions" style="margin-top: 16px;">
             <button class="btn btn-primary" id="btnGenerateCert">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 1v12M1 7h12"/></svg>
-              Generate New Certificate
-            </button>
-            <button class="btn btn-secondary" id="btnExportCert" disabled>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 1v8M3 9l4 4 4-4M2 13h10"/></svg>
-              Export Public Key
+              Generate Certificate
             </button>
           </div>
-          <div class="cert-pem-wrapper hidden" id="certPemWrapper">
-            <label>Public Key (PEM)</label>
-            <textarea class="cert-pem" id="certPem" readonly rows="8"></textarea>
+        </div>
+
+        <!-- Export & Public Key -->
+        <div class="card cert-pem-wrapper hidden" id="certPemWrapper" style="margin-top: 16px;">
+          <div class="panel-header-inline">
+            <h2>Public Key (Certificate PEM)</h2>
+            <button class="btn btn-secondary btn-small" id="btnExportCert" disabled>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 1v8M3 9l4 4 4-4M2 13h10"/></svg>
+              Export .crt File
+            </button>
+          </div>
+          <textarea class="cert-pem" id="certPem" readonly rows="7"></textarea>
+          <div class="card-actions" style="margin-top: 8px;">
             <button class="btn btn-ghost btn-small" id="btnCopyPem">Copy to Clipboard</button>
           </div>
         </div>

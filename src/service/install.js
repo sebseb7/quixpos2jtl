@@ -52,8 +52,40 @@ if (isUninstall) {
     logger.warn(`[Installer] Firewall removal note: ${err.message}`);
   }
 
+  const { execSync } = require('child_process');
+  const cleanScm = () => {
+    const names = [SERVICE_NAME, `${SERVICE_NAME.toLowerCase()}.exe`, 'quixpos2jtl.exe'];
+    for (const name of names) {
+      try { execSync(`net stop "${name}"`, { stdio: 'ignore', shell: 'cmd.exe' }); } catch { /* ignore */ }
+      try { execSync(`sc.exe stop "${name}"`, { stdio: 'ignore', shell: 'cmd.exe' }); } catch { /* ignore */ }
+      try { execSync(`sc.exe delete "${name}"`, { stdio: 'ignore', shell: 'cmd.exe' }); } catch { /* ignore */ }
+    }
+  };
+
   svc.on('uninstall', () => {
     logger.success('[Installer] Service uninstalled successfully (winsw)');
+    cleanScm();
+    console.log('SERVICE_UNINSTALLED');
+    setTimeout(() => process.exit(0), 500);
+  });
+
+  svc.on('alreadyuninstalled', () => {
+    logger.info('[Installer] Service is already uninstalled');
+    cleanScm();
+    console.log('SERVICE_UNINSTALLED');
+    setTimeout(() => process.exit(0), 500);
+  });
+
+  svc.on('doesnotexist', () => {
+    logger.info('[Installer] Service does not exist in SCM');
+    cleanScm();
+    console.log('SERVICE_UNINSTALLED');
+    setTimeout(() => process.exit(0), 500);
+  });
+
+  svc.on('invalidinstallation', () => {
+    logger.info('[Installer] Service installation invalid or not found');
+    cleanScm();
     console.log('SERVICE_UNINSTALLED');
     setTimeout(() => process.exit(0), 500);
   });
@@ -61,8 +93,9 @@ if (isUninstall) {
   svc.on('error', (err) => {
     const msg = err?.message || String(err);
     logger.error(`[Installer] Uninstall error: ${msg}`);
-    console.error('SERVICE_ERROR:' + msg);
-    process.exit(1);
+    cleanScm();
+    console.log('SERVICE_UNINSTALLED');
+    setTimeout(() => process.exit(0), 500);
   });
 
   svc.uninstall();
@@ -91,6 +124,12 @@ if (isUninstall) {
   logger.info('[Installer] Stopping service via node-windows...');
   svc.on('stop', () => {
     logger.success('[Installer] Service stopped event received');
+    console.log('SERVICE_STOPPED');
+    setTimeout(() => process.exit(0), 500);
+  });
+
+  svc.on('alreadystopped', () => {
+    logger.info('[Installer] Service is already stopped');
     console.log('SERVICE_STOPPED');
     setTimeout(() => process.exit(0), 500);
   });

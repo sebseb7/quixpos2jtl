@@ -17,8 +17,9 @@ contextBridge.exposeInMainWorld('api', {
   listShopOptions: (dbConfig) => ipcRenderer.invoke('list-shop-options', dbConfig),
 
   // Certificate
-  generateCert: () => ipcRenderer.invoke('generate-cert'),
+  generateCert: (options) => ipcRenderer.invoke('generate-cert', options),
   getCertInfo: () => ipcRenderer.invoke('get-cert-info'),
+  getLocalIps: () => ipcRenderer.invoke('get-local-ips'),
   exportCert: (destPath) => ipcRenderer.invoke('export-cert', destPath),
 
   // Service
