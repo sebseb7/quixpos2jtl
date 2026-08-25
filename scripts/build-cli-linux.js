@@ -25,7 +25,7 @@ fs.mkdirSync(SYSTEMD_DIR, { recursive: true });
 // 2. Compile standalone Linux ELF executable with pkg
 console.log('\n[1/5] Compiling standalone Linux ELF x64 binary with pkg...');
 const outputBin = path.join(LINUX_PKG_DIR, 'quixpos2jtl');
-const pkgCmd = `npx @yao-pkg/pkg bin/quixpos2jtl.js --target node22-linux-x64 --output "${outputBin}" --compress GZip --public`;
+const pkgCmd = `npx @yao-pkg/pkg bin/quixpos2jtl.js --target node22-linux-x64 --output "${outputBin}" --compress GZip --public --public-packages "*" --no-bytecode`;
 
 try {
   execSync(pkgCmd, { cwd: ROOT_DIR, stdio: 'inherit' });

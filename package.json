@@ -11,6 +11,11 @@
       "src/config.js",
       "src/service/**/*.js"
     ],
+    "bytecode": false,
+    "public": true,
+    "publicPackages": [
+      "*"
+    ],
     "ignore": [
       "open",
       "electron",
