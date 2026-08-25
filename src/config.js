@@ -55,9 +55,10 @@ const DEFAULTS = {
     httpsPort: 4447,
   },
   shop: {
-    mandantId: 0,
+    mandantId: null,
     database: '',   // resolved from selected mandant's cDB
-    kShop: 0,
+    kShop: null,
+    kBenutzer: null,
   },
   service: {
     mode: 'embedded', // 'embedded' | 'windows-service'

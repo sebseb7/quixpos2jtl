@@ -230,6 +230,11 @@ async function queryShopOptions(dbCfg) {
         `);
         shops = shopRes.recordset;
       } catch { /* ignore */ }
+
+      try {
+        const userRes = await req.query(`SELECT kBenutzer, cName, nAktiv FROM [${dbName}].[dbo].[tBenutzer] WHERE nAktiv = 1 ORDER BY kBenutzer`);
+        users = userRes.recordset;
+      } catch { /* ignore */ }
     }
 
     await pool.close();
@@ -237,9 +242,10 @@ async function queryShopOptions(dbCfg) {
       success: true,
       mandants,
       shops,
+      users,
     };
   } catch (err) {
-    return { success: false, error: err.message, mandants: [], shops: [] };
+    return { success: false, error: err.message, mandants: [], shops: [], users: [] };
   }
 }
 
@@ -335,10 +341,11 @@ async function editDatabaseSettings(rl, config) {
 async function editShopSettings(rl, config) {
   while (true) {
     console.log(`\n${C.cyan}${C.bright}=== JTL-Wawi Shop Settings ===${C.reset}`);
-    console.log(`[1] Mandant ID     : ${C.green}${config.shop?.mandantId ?? 0}${C.reset}`);
+    console.log(`[1] Mandant ID     : ${C.green}${config.shop?.mandantId ?? '(not configured)'}${C.reset}`);
     console.log(`[2] Shop Database  : ${C.green}${config.shop?.database || config.db?.database || '(auto)'}${C.reset}`);
-    console.log(`[3] POS Shop ID    : ${C.green}${config.shop?.kShop ?? 0}${C.reset}`);
-    console.log(`[4] Auto-Select POS Shop from Database (Live Query)`);
+    console.log(`[3] POS Shop ID    : ${C.green}${config.shop?.kShop ?? '(not configured)'}${C.reset}`);
+    console.log(`[4] Benutzer ID    : ${C.green}${config.shop?.kBenutzer ?? '(not configured)'}${C.reset}`);
+    console.log(`[5] Auto-Select POS Shop & Benutzer from Database (Live Query)`);
     console.log(`[0] Back to Main Menu`);
 
     const choice = await askQuestion(rl, '\nSelect option');
@@ -348,8 +355,8 @@ async function editShopSettings(rl, config) {
 
     switch (choice) {
       case '1': {
-        const val = await askQuestion(rl, 'Enter Mandant ID (kMandant)', String(config.shop.mandantId ?? 0));
-        config.shop.mandantId = parseInt(val, 10) || 0;
+        const val = await askQuestion(rl, 'Enter Mandant ID (kMandant)', config.shop.mandantId != null ? String(config.shop.mandantId) : '');
+        config.shop.mandantId = val ? parseInt(val, 10) || null : null;
         break;
       }
       case '2': {
@@ -358,13 +365,18 @@ async function editShopSettings(rl, config) {
         break;
       }
       case '3': {
-        const val = await askQuestion(rl, 'Enter POS Shop ID (kShop)', String(config.shop.kShop ?? 0));
-        config.shop.kShop = parseInt(val, 10) || 0;
+        const val = await askQuestion(rl, 'Enter POS Shop ID (kShop)', config.shop.kShop != null ? String(config.shop.kShop) : '');
+        config.shop.kShop = val ? parseInt(val, 10) || null : null;
         break;
       }
       case '4': {
+        const val = await askQuestion(rl, 'Enter Benutzer ID (kBenutzer)', config.shop.kBenutzer != null ? String(config.shop.kBenutzer) : '');
+        config.shop.kBenutzer = val ? parseInt(val, 10) || null : null;
+        break;
+      }
+      case '5': {
         const targetDb = config.shop?.database || config.db?.database;
-        console.log(`\n${C.gray}Querying shop options from ${config.db.server}/${targetDb}...${C.reset}`);
+        console.log(`\n${C.gray}Querying shop & user options from ${config.db.server}/${targetDb}...${C.reset}`);
         const effectiveDbConfig = { ...config.db, database: targetDb };
         const res = await queryShopOptions(effectiveDbConfig);
         if (!res.success) {
@@ -400,6 +412,22 @@ async function editShopSettings(rl, config) {
           }
         } else {
           console.log(`${C.yellow}No POS shops (nTyp=4, nAktiv=1, nGesperrt=0) found in database.${C.reset}`);
+        }
+
+        // Benutzer
+        if (res.users?.length) {
+          console.log(`\n${C.yellow}Available JTL-Wawi Users (tBenutzer):${C.reset}`);
+          res.users.forEach((u, i) => {
+            console.log(` [${i + 1}] ID: ${u.kBenutzer} - "${u.cName}"`);
+          });
+          const p = await askQuestion(rl, 'Select Benutzer number (or Enter to keep current)');
+          const idx = parseInt(p, 10) - 1;
+          if (idx >= 0 && idx < res.users.length) {
+            config.shop.kBenutzer = res.users[idx].kBenutzer;
+            console.log(`${C.green}✓ Set Benutzer to: "${res.users[idx].cName}" (kBenutzer: ${config.shop.kBenutzer})${C.reset}`);
+          }
+        } else {
+          console.log(`${C.yellow}No active users (tBenutzer) found in database.${C.reset}`);
         }
 
         break;
@@ -784,6 +812,9 @@ async function handleCliFlags() {
   const kShop = getArgVal('--kshop') || getArgVal('--shop-id') || getArgVal('--shop');
   if (kShop !== null) { config.shop = config.shop || {}; config.shop.kShop = parseInt(kShop, 10) || 0; modifiedConfig = true; }
 
+  const kBenutzer = getArgVal('--kbenutzer') || getArgVal('--user-id') || getArgVal('--user');
+  if (kBenutzer !== null) { config.shop = config.shop || {}; config.shop.kBenutzer = parseInt(kBenutzer, 10) || 0; modifiedConfig = true; }
+
   // Save if flags modified
   if (modifiedConfig) {
     saveConfig(config);
@@ -898,6 +929,7 @@ ${C.yellow}Direct Configuration Flags:${C.reset}
   --mandant-id <id>           Set JTL Mandant ID
   --mandant-db <db>           Set JTL Mandant Database name
   --kshop <id>, --shop-id <id> Set JTL POS Shop ID (derives taxzone, warehouse, language, category)
+  --kbenutzer <id>, --user-id <id> Set JTL-Wawi Benutzer (User) ID
 
 ${C.yellow}Pairing & Certificate Commands:${C.reset}
   --pin <pin>                 Set active pairing PIN for JTL-POS

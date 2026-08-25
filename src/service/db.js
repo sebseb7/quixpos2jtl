@@ -105,13 +105,13 @@ async function connect(dbCfgOverride) {
       const shopId = await fetchActiveShop(pool);
       const { getActiveShopDetails } = require('./jtl/shop');
       const details = getActiveShopDetails();
-      if (details) {
-        logger.info(`Active JTL POS shop: #${shopId} "${details.cName}" (Steuerzone: ${details.kSteuerzone ?? 0}, Warenlager: ${details.kWarenlager ?? 0}, Sprache: ${details.kSprache ?? 0}, Root-Kat: ${details.kKategorie ?? 0})`);
+      if (shopId && details) {
+        logger.info(`Active JTL POS shop: #${shopId} "${details.cName}" (Steuerzone: ${details.kSteuerzone ?? 'none'}, Warenlager: ${details.kWarenlager ?? 'none'}, Sprache: ${details.kSprache ?? 'none'}, Root-Kat: ${details.kKategorie ?? 'none'})`);
       } else {
-        logger.info(`Active JTL shop ID: ${shopId}`);
+        logger.warn('JTL POS Shop is not configured. Please configure kShop in settings.');
       }
     } catch (err) {
-      logger.warn(`Could not fetch active shop ID: ${err.message}`);
+      logger.warn(`Could not load active shop: ${err.message}`);
     }
 
     return pool;

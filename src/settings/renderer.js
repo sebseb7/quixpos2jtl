@@ -84,8 +84,9 @@ async function loadConfig() {
   document.getElementById('httpsPort').value = cfg.network?.httpsPort || 4447;
 
   // Shop
-  shopState.mandantId = cfg.shop?.mandantId || 0;
-  shopState.kShop = cfg.shop?.kShop || cfg.shop?.shopId || 0;
+  shopState.mandantId = cfg.shop?.mandantId ?? null;
+  shopState.kShop = cfg.shop?.kShop ?? null;
+  shopState.kBenutzer = cfg.shop?.kBenutzer ?? null;
 
   updateShopTabAvailability();
 }
@@ -93,9 +94,11 @@ async function loadConfig() {
 // ─── Shop Tab ──────────────────────────────────────────────────
 
 const shopState = {
-  mandantId: 0,
-  kShop: 0,
+  mandantId: null,
+  kShop: null,
+  kBenutzer: null,
   shops: [],
+  users: [],
 };
 
 function isDatabaseSelected() {
@@ -131,6 +134,11 @@ async function refreshShopOptions() {
 
   const mandantSelect = document.getElementById('shopMandant');
   mandantSelect.innerHTML = '';
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '— Select mandant —';
+  mandantSelect.appendChild(placeholder);
+
   for (const m of res.mandants) {
     const opt = document.createElement('option');
     opt.value = String(m.kMandant);
@@ -168,12 +176,15 @@ async function onMandantChanged(loadOptions = true) {
   }
 
   shopState.shops = res.shops || [];
+  shopState.users = res.users || [];
+
+  // Populate Shops
   const shopSelect = document.getElementById('shopSelect');
   shopSelect.innerHTML = '';
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = '— Select Shop —';
-  shopSelect.appendChild(placeholder);
+  const shopPlaceholder = document.createElement('option');
+  shopPlaceholder.value = '';
+  shopPlaceholder.textContent = '— Select Shop —';
+  shopSelect.appendChild(shopPlaceholder);
 
   for (const s of shopState.shops) {
     const opt = document.createElement('option');
@@ -184,9 +195,25 @@ async function onMandantChanged(loadOptions = true) {
 
   if (shopState.kShop && shopState.shops.some((s) => s.kShop === shopState.kShop)) {
     shopSelect.value = String(shopState.kShop);
-  } else if (shopState.shops.length === 1) {
-    shopSelect.value = String(shopState.shops[0].kShop);
-    shopState.kShop = shopState.shops[0].kShop;
+  }
+
+  // Populate Benutzer
+  const benutzerSelect = document.getElementById('shopBenutzer');
+  benutzerSelect.innerHTML = '';
+  const userPlaceholder = document.createElement('option');
+  userPlaceholder.value = '';
+  userPlaceholder.textContent = '— Select Benutzer —';
+  benutzerSelect.appendChild(userPlaceholder);
+
+  for (const u of shopState.users) {
+    const opt = document.createElement('option');
+    opt.value = String(u.kBenutzer);
+    opt.textContent = `${u.cName} (ID: ${u.kBenutzer})`;
+    benutzerSelect.appendChild(opt);
+  }
+
+  if (shopState.kBenutzer && shopState.users.some((u) => u.kBenutzer === shopState.kBenutzer)) {
+    benutzerSelect.value = String(shopState.kBenutzer);
   }
 
   updateDerivedShopDetails();
@@ -232,10 +259,11 @@ function gatherConfig() {
       httpsPort: parseInt(document.getElementById('httpsPort').value, 10) || 4447,
     },
     shop: {
-      mandantId: parseInt(document.getElementById('shopMandant').value, 10) || 0,
+      mandantId: document.getElementById('shopMandant').value ? parseInt(document.getElementById('shopMandant').value, 10) : null,
       database: document.getElementById('shopMandant').selectedOptions[0]?.dataset.db
         || document.getElementById('dbDatabase').value,
-      kShop: parseInt(document.getElementById('shopSelect').value, 10) || 0,
+      kShop: document.getElementById('shopSelect').value ? parseInt(document.getElementById('shopSelect').value, 10) : null,
+      kBenutzer: document.getElementById('shopBenutzer').value ? parseInt(document.getElementById('shopBenutzer').value, 10) : null,
     },
   };
 }
@@ -264,8 +292,11 @@ function bindActions() {
   document.getElementById('btnRefreshShop').addEventListener('click', refreshShopOptions);
   document.getElementById('shopMandant').addEventListener('change', () => onMandantChanged(true));
   document.getElementById('shopSelect').addEventListener('change', () => {
-    shopState.kShop = parseInt(document.getElementById('shopSelect').value, 10) || 0;
+    shopState.kShop = document.getElementById('shopSelect').value ? parseInt(document.getElementById('shopSelect').value, 10) : null;
     updateDerivedShopDetails();
+  });
+  document.getElementById('shopBenutzer').addEventListener('change', () => {
+    shopState.kBenutzer = document.getElementById('shopBenutzer').value ? parseInt(document.getElementById('shopBenutzer').value, 10) : null;
   });
 
   // Test Connection

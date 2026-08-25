@@ -385,10 +385,14 @@ function registerIpcHandlers() {
         WHERE s.nTyp = 4 AND s.nAktiv = 1 AND s.nGesperrt = 0
         ORDER BY s.kShop
       `);
+      const usersResult = await request.query(
+        `SELECT kBenutzer, cName, nAktiv FROM [${dbName}].[dbo].[tBenutzer] WHERE nAktiv = 1 ORDER BY kBenutzer`
+      );
       await pool.close();
       return {
         success: true,
         shops: result.recordset,
+        users: usersResult.recordset,
       };
     } catch (err) {
       return { success: false, error: err.message };

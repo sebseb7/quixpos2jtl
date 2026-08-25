@@ -1,12 +1,12 @@
 const sql = require('mssql');
 const { getPool } = require('../../db');
-const { getActiveShopId, getActiveShopSubshopId, getActiveLanguageId } = require('../shop');
+const { getActiveShopId, getActiveShopSubshopId, getActiveLanguageId, getActiveUserId } = require('../shop');
 const { logger } = require('../../logger');
 const { deliverOrder } = require('./delivery/index');
 
 function getConfig() {
   return {
-    kBenutzer: Number(process.env.JTL_KBENUTZER) || 1,
+    kBenutzer: getActiveUserId(),
     kFirmaHistory: Number(process.env.JTL_KFIRMAHISTORY) || 0,
     kSprache: getActiveLanguageId(),
     kPlattform: Number(process.env.JTL_KPLATTFORM) || 7,
