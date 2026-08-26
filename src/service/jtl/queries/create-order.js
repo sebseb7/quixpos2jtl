@@ -199,7 +199,7 @@ async function resolveFirmaHistory(transaction, kFirma) {
       SELECT TOP 1 kFirmaHistory
       FROM dbo.tFirmaHistory
       WHERE kFirma = @kFirma
-      ORDER BY dGueltigAb DESC, kFirmaHistory DESC
+      ORDER BY kFirmaHistory DESC
     `);
   const kFirmaHistory = result.recordset[0]?.kFirmaHistory;
   if (!kFirmaHistory) {
