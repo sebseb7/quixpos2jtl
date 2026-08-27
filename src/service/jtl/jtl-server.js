@@ -23,8 +23,7 @@ function buildConfig(config = {}) {
   };
 }
 
-function createJtlPosServer(pairingStore, config = {}) {
-  const resolvedConfig = buildConfig(config);
+function createJtlPosServer(pairingStore, baseConfig = {}) {
   const routes = new Map(endpoints.map((endpoint) => [`${endpoint.method} ${endpoint.path}`, endpoint]));
 
   async function handle(req, res) {
@@ -38,7 +37,8 @@ function createJtlPosServer(pairingStore, config = {}) {
     const endpoint = routes.get(routeKey);
 
     if (endpoint) {
-      return await endpoint.handle(req, res, { url, pairingStore, config: resolvedConfig });
+      const activeConfig = buildConfig(baseConfig);
+      return await endpoint.handle(req, res, { url, pairingStore, config: activeConfig });
     }
 
     return sendJson(res, 404, {

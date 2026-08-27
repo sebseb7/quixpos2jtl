@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld('api', {
   pingPipe: () => ipcRenderer.invoke('ping-pipe'),
   startService: () => ipcRenderer.invoke('start-service'),
   stopService: () => ipcRenderer.invoke('stop-service'),
+  restartService: () => ipcRenderer.invoke('restart-service'),
+  reloadServiceConfig: () => ipcRenderer.invoke('reload-service-config'),
   installService: () => ipcRenderer.invoke('install-service'),
   uninstallService: () => ipcRenderer.invoke('uninstall-service'),
 

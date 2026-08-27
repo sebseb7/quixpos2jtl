@@ -290,13 +290,24 @@ function bindActions() {
     if (isDatabaseSelected()) refreshShopOptions();
   });
   document.getElementById('btnRefreshShop').addEventListener('click', refreshShopOptions);
-  document.getElementById('shopMandant').addEventListener('change', () => onMandantChanged(true));
-  document.getElementById('shopSelect').addEventListener('change', () => {
+  document.getElementById('shopMandant').addEventListener('change', async () => {
+    await onMandantChanged(true);
+    const cfg = gatherConfig();
+    await window.api.saveConfig(cfg);
+    showSaveFeedback('✓ Mandant selected & config reloaded');
+  });
+  document.getElementById('shopSelect').addEventListener('change', async () => {
     shopState.kShop = document.getElementById('shopSelect').value ? parseInt(document.getElementById('shopSelect').value, 10) : null;
     updateDerivedShopDetails();
+    const cfg = gatherConfig();
+    await window.api.saveConfig(cfg);
+    showSaveFeedback('✓ POS Shop selected & config reloaded');
   });
-  document.getElementById('shopBenutzer').addEventListener('change', () => {
+  document.getElementById('shopBenutzer').addEventListener('change', async () => {
     shopState.kBenutzer = document.getElementById('shopBenutzer').value ? parseInt(document.getElementById('shopBenutzer').value, 10) : null;
+    const cfg = gatherConfig();
+    await window.api.saveConfig(cfg);
+    showSaveFeedback('✓ Benutzer selected & config reloaded');
   });
 
   // Test Connection
@@ -390,6 +401,19 @@ function bindActions() {
       await fetchLogs(true);
     }, 500);
   });
+
+  const btnRestart = document.getElementById('btnRestartService');
+  if (btnRestart) {
+    btnRestart.addEventListener('click', async () => {
+      btnRestart.classList.add('loading');
+      await window.api.restartService();
+      btnRestart.classList.remove('loading');
+      setTimeout(async () => {
+        await refreshServiceStatus();
+        await fetchLogs(true);
+      }, 800);
+    });
+  }
 
   document.getElementById('btnInstallService').addEventListener('click', async () => {
     const btn = document.getElementById('btnInstallService');
@@ -641,15 +665,17 @@ async function refreshServiceStatus() {
   // Toggle buttons
   document.getElementById('btnStartService').disabled = status.running;
   document.getElementById('btnStopService').disabled = !status.running;
+  const btnRestart = document.getElementById('btnRestartService');
+  if (btnRestart) btnRestart.disabled = !status.running;
   document.getElementById('btnInstallService').disabled = status.installed;
   document.getElementById('btnUninstallService').disabled = !status.installed;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────
 
-function showSaveFeedback() {
+function showSaveFeedback(message = '✓ Settings saved') {
   const el = document.getElementById('saveFeedback');
-  el.textContent = '✓ Settings saved';
+  el.textContent = message;
   el.classList.add('visible');
   setTimeout(() => el.classList.remove('visible'), 2500);
 }

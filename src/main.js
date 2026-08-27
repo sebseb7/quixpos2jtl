@@ -181,6 +181,7 @@ function updateTrayMenu() {
     menuItems.push(
       { label: 'Start Service', click: () => { svcManager.startWindowsService(); updateTrayMenu(); }, enabled: !isRunning },
       { label: 'Stop Service', click: () => { svcManager.stopWindowsService(); updateTrayMenu(); }, enabled: isRunning },
+      { label: 'Restart Service', click: async () => { await svcManager.restartWindowsService(); updateTrayMenu(); }, enabled: isRunning },
       { type: 'separator' },
       { label: 'Uninstall Service', click: async () => { await svcManager.uninstallService(); updateTrayMenu(); } },
     );
@@ -188,6 +189,7 @@ function updateTrayMenu() {
     menuItems.push(
       { label: 'Start', click: () => { svcManager.startEmbedded(); updateTrayMenu(); }, enabled: !isRunning },
       { label: 'Stop', click: () => { svcManager.stopEmbedded(); updateTrayMenu(); }, enabled: isRunning },
+      { label: 'Restart', click: async () => { await svcManager.restartEmbedded(); updateTrayMenu(); }, enabled: isRunning },
       { type: 'separator' },
       { label: 'Install as Windows Service', click: async () => { await svcManager.installService(); updateTrayMenu(); } },
     );
@@ -246,10 +248,11 @@ function openSettings() {
 function registerIpcHandlers() {
   ipcMain.handle('get-config', () => config.loadConfig());
 
-  ipcMain.handle('save-config', (_e, newConfig) => {
+  ipcMain.handle('save-config', async (_e, newConfig) => {
     config.saveConfig(newConfig);
     updateFirewallRules(newConfig.network?.httpPort || 8087, newConfig.network?.httpsPort || 4447);
-    return { success: true };
+    const reloadResult = await svcManager.reloadConfig();
+    return { success: true, reload: reloadResult };
   });
 
   ipcMain.handle('test-connection', async (_e, dbConfig) => {
@@ -518,6 +521,16 @@ function registerIpcHandlers() {
     }
     updateTrayMenu();
     return result;
+  });
+
+  ipcMain.handle('restart-service', async () => {
+    const result = await svcManager.restartService();
+    updateTrayMenu();
+    return result;
+  });
+
+  ipcMain.handle('reload-service-config', async () => {
+    return await svcManager.reloadConfig();
   });
 
   ipcMain.handle('install-service', async () => {

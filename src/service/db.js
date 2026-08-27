@@ -72,8 +72,29 @@ function buildSqlConfig(dbCfg) {
  * Connect (or reconnect) to the database using the latest or provided config.
  */
 async function connect(dbCfgOverride) {
-  const config = dbCfgOverride || loadConfig().db;
-  currentDbConfigJson = JSON.stringify(config);
+  const fullConfig = loadConfig();
+  const effectiveDbName = fullConfig.shop?.database || fullConfig.db?.database || '';
+  const config = dbCfgOverride || {
+    ...fullConfig.db,
+    database: effectiveDbName,
+  };
+  currentDbConfigJson = JSON.stringify({
+    db: {
+      server: config.server || '',
+      port: config.port || 1433,
+      database: config.database || '',
+      user: config.user || '',
+      password: config.password || '',
+      encrypt: !!config.encrypt,
+      trustServerCertificate: config.trustServerCertificate !== false,
+    },
+    shop: {
+      mandantId: fullConfig.shop?.mandantId ?? null,
+      database: fullConfig.shop?.database || '',
+      kShop: fullConfig.shop?.kShop ?? null,
+      kBenutzer: fullConfig.shop?.kBenutzer ?? null,
+    },
+  });
 
   if (pool) {
     try { await pool.close(); } catch { /* ignore */ }
@@ -110,6 +131,9 @@ async function connect(dbCfgOverride) {
       } else {
         logger.warn('JTL POS Shop is not configured. Please configure kShop in settings.');
       }
+      if (fullConfig.shop?.kBenutzer) {
+        logger.info(`Active JTL-Wawi Benutzer ID: ${fullConfig.shop.kBenutzer}`);
+      }
     } catch (err) {
       logger.warn(`Could not load active shop: ${err.message}`);
     }
@@ -125,10 +149,62 @@ async function connect(dbCfgOverride) {
  * Reload database connection if config has changed.
  */
 async function reloadIfChanged() {
-  const config = loadConfig().db;
-  const newJson = JSON.stringify(config);
-  if (newJson !== currentDbConfigJson || !pool) {
-    return await connect(config);
+  const fullConfig = loadConfig();
+  const effectiveDbName = fullConfig.shop?.database || fullConfig.db?.database || '';
+  const dbConfig = {
+    ...fullConfig.db,
+    database: effectiveDbName,
+  };
+  const newConfigObj = {
+    db: {
+      server: dbConfig.server || '',
+      port: dbConfig.port || 1433,
+      database: dbConfig.database || '',
+      user: dbConfig.user || '',
+      password: dbConfig.password || '',
+      encrypt: !!dbConfig.encrypt,
+      trustServerCertificate: dbConfig.trustServerCertificate !== false,
+    },
+    shop: {
+      mandantId: fullConfig.shop?.mandantId ?? null,
+      database: fullConfig.shop?.database || '',
+      kShop: fullConfig.shop?.kShop ?? null,
+      kBenutzer: fullConfig.shop?.kBenutzer ?? null,
+    },
+  };
+  const newJson = JSON.stringify(newConfigObj);
+
+  if (newJson !== currentDbConfigJson || !pool || !pool.connected) {
+    let currentDbOnly = null;
+    try {
+      currentDbOnly = currentDbConfigJson ? JSON.parse(currentDbConfigJson).db : null;
+    } catch {
+      currentDbOnly = null;
+    }
+    const dbParamsChanged = !currentDbOnly || JSON.stringify(currentDbOnly) !== JSON.stringify(newConfigObj.db);
+
+    if (dbParamsChanged || !pool || !pool.connected) {
+      logger.info(`Database config change detected — reconnecting pool to ${dbConfig.server}:${dbConfig.port || 1433}/${dbConfig.database}…`);
+      return await connect(dbConfig);
+    }
+
+    // DB parameters didn't change, only shop / user selection changed
+    currentDbConfigJson = newJson;
+    try {
+      const shopId = await fetchActiveShop(pool);
+      const { getActiveShopDetails } = require('./jtl/shop');
+      const details = getActiveShopDetails();
+      if (shopId && details) {
+        logger.info(`Active JTL POS shop updated: #${shopId} "${details.cName}" (Steuerzone: ${details.kSteuerzone ?? 'none'}, Warenlager: ${details.kWarenlager ?? 'none'}, Sprache: ${details.kSprache ?? 'none'}, Root-Kat: ${details.kKategorie ?? 'none'})`);
+      } else {
+        logger.warn('JTL POS Shop is not configured or not found. Please configure kShop in settings.');
+      }
+      if (fullConfig.shop?.kBenutzer) {
+        logger.info(`Active JTL-Wawi Benutzer ID updated: ${fullConfig.shop.kBenutzer}`);
+      }
+    } catch (err) {
+      logger.warn(`Could not refresh active shop after config change: ${err.message}`);
+    }
   }
   return pool;
 }

@@ -154,7 +154,7 @@ const DUMMY_ORDERS = [
     orderId: '125',
     note: '',
     creationDate: '2026-08-12 09:15:00',
-    shippingName: 'Selbstabholer',
+    shippingName: 'Selbstabholung',
     shippingInfo: null,
     currencyIso: 'EUR',
     languageIso: 'de',

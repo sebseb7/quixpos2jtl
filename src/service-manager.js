@@ -220,6 +220,54 @@ async function stopWindowsService() {
   }
 }
 
+async function restartEmbedded() {
+  logger.info('[ServiceManager] Restarting embedded service...');
+  stopEmbedded();
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  return startEmbedded();
+}
+
+async function restartWindowsService() {
+  logger.info(`[ServiceManager] Restarting Windows service '${SERVICE_NAME}'...`);
+  await stopWindowsService();
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  return await startWindowsService();
+}
+
+async function restartService() {
+  const status = getStatus();
+  if (status.mode === 'windows-service') {
+    return await restartWindowsService();
+  } else {
+    return await restartEmbedded();
+  }
+}
+
+async function reloadConfig() {
+  logger.info('[ServiceManager] Requesting service configuration reload…');
+  let notifiedIpc = false;
+  if (childProcess) {
+    try {
+      childProcess.send({ type: 'reload-config' });
+      notifiedIpc = true;
+    } catch {
+      // ignore
+    }
+  }
+
+  try {
+    const res = await queryPipe('/api/config/reload', 'POST', {}, 2000);
+    logger.success('[ServiceManager] Service configuration reloaded via API');
+    return { success: true, ...res };
+  } catch (err) {
+    if (notifiedIpc) {
+      return { success: true, message: 'Reload command sent via IPC' };
+    }
+    logger.info(`[ServiceManager] Service reload note: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
 function isServiceInstalled() {
   try {
     const out = execSync(`sc.exe query "${SERVICE_NAME}"`, { encoding: 'utf-8', shell: 'cmd.exe' });
@@ -464,11 +512,15 @@ async function clearLogs() {
 module.exports = {
   startEmbedded,
   stopEmbedded,
+  restartEmbedded,
   isEmbeddedRunning,
   installService,
   uninstallService,
   startWindowsService,
   stopWindowsService,
+  restartWindowsService,
+  restartService,
+  reloadConfig,
   isServiceInstalled,
   getWindowsServiceStatus,
   getStatus,

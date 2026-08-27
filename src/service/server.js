@@ -152,11 +152,17 @@ async function start() {
   app.post('/api/config/reload', async (_req, res) => {
     try {
       await db.reloadIfChanged();
-      logger.success('Database configuration reloaded via API');
-      res.json({ status: 'ok', message: 'Database configuration reloaded' });
+      const { getActiveShopDetails } = require('./jtl/shop');
+      const shopDetails = getActiveShopDetails();
+      logger.success('Configuration and active shop/user reloaded via API');
+      res.json({
+        status: 'ok',
+        message: 'Configuration reloaded',
+        shop: shopDetails ? { kShop: shopDetails.kShop, name: shopDetails.cName } : null,
+      });
     } catch (err) {
       db.startReconnectLoop(10000);
-      logger.error(`Database reload failed: ${err.message}`);
+      logger.error(`Database & shop reload failed: ${err.message}`);
       res.status(500).json({ status: 'error', error: err.message });
     }
   });
@@ -377,7 +383,7 @@ function setupConfigFileWatcher() {
         clearTimeout(configWatchDebounce);
         configWatchDebounce = setTimeout(async () => {
           try {
-            logger.info('Detected config.json change on disk — updating database connection…');
+            logger.info('Detected config.json change on disk — reloading service configuration…');
             await db.reloadIfChanged();
           } catch (err) {
             logger.warn(`Database reconnect on config change: ${err.message}`);
@@ -406,6 +412,13 @@ process.on('message', async (msg) => {
   if (msg === 'stop' || (msg && msg.type === 'stop')) {
     await stop();
     process.exit(0);
+  } else if (msg === 'reload' || (msg && msg.type === 'reload-config')) {
+    try {
+      logger.info('Received reload command from parent process…');
+      await db.reloadIfChanged();
+    } catch (err) {
+      logger.warn(`Parent reload command error: ${err.message}`);
+    }
   }
 });
 
