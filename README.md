@@ -3,6 +3,8 @@
 [![Build and Upload Installer](https://github.com/sebseb7/quixpos2jtl/actions/workflows/build-installer.yml/badge.svg)](https://github.com/sebseb7/quixpos2jtl/actions/workflows/build-installer.yml)
 [![Installer SHA-256](https://byob.yarr.is/sebseb7/quixpos2jtl/installer_sha256)](https://github.com/sebseb7/quixpos2jtl/actions)
 
+[![QuixPOS2JTL Video Guide](https://img.youtube.com/vi/leFwsiL4jsc/sddefault.jpg)](https://youtu.be/leFwsiL4jsc)
+
 **QuixPOS2JTL** connects [QuixPOS.com](https://quixpos.com) to **JTL-Wawi** (JTL WAWI).
 
 The service can run as a tray app, **Windows service** or Linux CLI.
