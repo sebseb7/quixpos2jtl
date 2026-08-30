@@ -431,8 +431,8 @@ async function insertOrderItem(transaction, kAuftrag, item) {
   const quantity = toNumber(item.quantity ?? item.count ?? item.amount, 1);
   const rawPriceNet = item.priceNet ?? item.netPrice ?? item.unitNetPrice;
   const rawPriceGross = item.priceGross ?? item.grossPrice ?? item.price ?? item.unitPrice;
-  const priceNet = rawPriceNet != null 
-    ? toNumber(rawPriceNet, 0) 
+  const priceNet = rawPriceNet != null
+    ? toNumber(rawPriceNet, 0)
     : (rawPriceGross != null ? toNumber(rawPriceGross, 0) / (1 + vat / 100) : 0);
   const discount = toNumber(item.discountPercent ?? item.discount ?? item.discountRate, 0);
   const kSteuerklasse = steuerklasseForVat(vat);
@@ -604,11 +604,16 @@ async function getOffenerAuftragswert(transaction, kAuftrag) {
 }
 
 function isNewPayment(payment) {
-  const paymentId = toNumber(payment.paymentId, 0);
-  return paymentId <= 0;
+  const paymentId = toNumber(payment?.paymentId, 0);
+  const amount = toNumber(payment?.amount, 0);
+  return paymentId <= 0 && amount !== 0;
 }
 
 async function insertPayment(transaction, kAuftrag, payment, order, orderDate, zahlungsartCache) {
+  const amount = toNumber(payment?.amount, 0);
+  if (amount === 0) {
+    return;
+  }
   const kBenutzer = getActiveUserId();
   const zahlungsart = await resolveZahlungsart(transaction, payment.paymentMethodName || order.paymentMethodName, zahlungsartCache);
   const kZahlung = await allocatePk(transaction, 'tZahlung');
@@ -623,7 +628,7 @@ async function insertPayment(transaction, kAuftrag, payment, order, orderDate, z
     .input('kZahlung', sql.Int, kZahlung)
     .input('cName', sql.NVarChar, zahlungsart.cName)
     .input('dDatum', sql.DateTime, orderDate)
-    .input('fBetrag', sql.Float, toNumber(payment.amount, 0))
+    .input('fBetrag', sql.Float, amount)
     .input('kBestellung', sql.Int, kAuftrag)
     .input('kBenutzer', sql.Int, kBenutzer)
     .input('kZahlungsart', sql.Int, zahlungsart.kZahlungsart)
@@ -651,6 +656,7 @@ async function insertPayment(transaction, kAuftrag, payment, order, orderDate, z
 }
 
 async function createOrder(order) {
+  logger.info(`createOrder: order=${JSON.stringify(order, null, 2)}`);
   assertShopConfigured();
   const kShop = getActiveShopId();
   const kFirma = getActiveFirmaId();
