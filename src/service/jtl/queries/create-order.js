@@ -384,6 +384,28 @@ async function insertOrderAddress(transaction, kAuftrag, kKunde, address, nTyp) 
     `);
 }
 
+async function insertOrderText(transaction, kAuftrag, note) {
+  const cAnmerkung = note != null ? String(note).trim() : '';
+  if (!cAnmerkung) return;
+
+  await new sql.Request(transaction)
+    .input('kAuftrag', sql.Int, kAuftrag)
+    .input('cAnmerkung', sql.NVarChar, cAnmerkung)
+    .query(`
+      IF EXISTS (SELECT 1 FROM Verkauf.tAuftragText WHERE kAuftrag = @kAuftrag)
+      BEGIN
+        UPDATE Verkauf.tAuftragText
+        SET cAnmerkung = @cAnmerkung
+        WHERE kAuftrag = @kAuftrag;
+      END
+      ELSE
+      BEGIN
+        INSERT INTO Verkauf.tAuftragText (kAuftrag, cAnmerkung)
+        VALUES (@kAuftrag, @cAnmerkung);
+      END
+    `);
+}
+
 let hasGesamtColumnsCache = null;
 
 async function checkHasGesamtColumns(transaction) {
@@ -708,6 +730,7 @@ async function createOrder(order) {
     const kPosAuftragVal = Number.parseInt(order.externalId, 10);
     await upsertPosOrderMapping(transaction, kAuftrag, kPosAuftragVal);
 
+    await insertOrderText(transaction, kAuftrag, order.note);
     await insertOrderAddress(transaction, kAuftrag, kKunde, order.shippingAddress, 0);
     await insertOrderAddress(transaction, kAuftrag, kKunde, order.billingAddress, 1);
 
