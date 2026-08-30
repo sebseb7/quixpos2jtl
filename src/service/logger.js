@@ -227,10 +227,7 @@ const logger = {
     const externalId = order?.externalId ?? '';
     const line = `${ts} externalId=${externalId} ${JSON.stringify(order)}\n`;
     writeLogLine(ORDER_LOG_FILE, line, getOrderLogStream, () => { orderLogStream = null; });
-    pushLog('OK', `Order logged: externalId=${externalId}`);
-    if (logBodyEnabled) {
-      pushLog('INFO', `[ORDER BODY] externalId=${externalId}:\n${JSON.stringify(order, null, 2)}`);
-    }
+    pushLog('OK', `Order received for externalId=${externalId}:\n${JSON.stringify(order, null, 2)}`);
   },
 
   isLogBodyEnabled,
