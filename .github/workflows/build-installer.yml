@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -56,6 +58,13 @@ jobs:
           echo "SHA256 checksum: $SHA256"
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "installer_path=$EXE_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Generate artifact attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            ${{ steps.checksum.outputs.installer_path }}
+            dist/quixpos2jtl-cli-linux-x64.tar.gz
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v7
