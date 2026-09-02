@@ -36,7 +36,7 @@ async function searchOrders({ search = '', limit = 50 } = {}) {
       tAuftrag.dErstellt AS dCreationDate,
       tAuftrag.dVoraussichtlichesLieferdatum AS dShippingDate,
       tAuftragText.cHinweis AS cComment,
-      tSprachen.cISO AS cLanguageIso,
+      ISNULL(tSpracheUsed.cISO2, tSpracheUsed.cISO) AS cLanguageIso,
       tversandart.cName AS cShippingName,
       tZahlungsart.cName AS cPaymentMethodName,
       tkunde.cKundenNr AS cCustomerNumber,
@@ -57,7 +57,7 @@ async function searchOrders({ search = '', limit = 50 } = {}) {
     FROM Verkauf.tAuftrag
     LEFT JOIN Verkauf.tAuftragText ON tAuftrag.kAuftrag = tAuftragText.kAuftrag
     LEFT JOIN dbo.tversandart ON tAuftrag.kVersandArt = tversandart.kVersandArt
-    LEFT JOIN dbo.tSprachen ON tAuftrag.kSprache = tSprachen.kSprache
+    LEFT JOIN dbo.tSpracheUsed ON tAuftrag.kSprache = tSpracheUsed.kSprache
     LEFT JOIN dbo.tZahlungsart ON tAuftrag.kZahlungsArt = tZahlungsart.kZahlungsart
     LEFT JOIN Verkauf.vAuftragLieferadresse AS Lieferadresse ON tAuftrag.kAuftrag = Lieferadresse.kAuftrag
     LEFT JOIN Verkauf.vAuftragRechnungsadresse AS Rechnungsadresse ON tAuftrag.kAuftrag = Rechnungsadresse.kAuftrag
