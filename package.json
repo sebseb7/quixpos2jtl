@@ -49,7 +49,7 @@
   },
   "devDependencies": {
     "@yao-pkg/pkg": "^6.22.0",
-    "electron": "^44.0.0",
+    "electron": "^44.1.1",
     "electron-builder": "^26.15.3"
   },
   "build": {
